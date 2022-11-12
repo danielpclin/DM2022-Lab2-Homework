@@ -1,0 +1,12 @@
+jupyter
+numpy
+pandas
+matplotlib
+plotly
+nltk
+sklearn
+seaborn
+gensim
+tensorflow
+tensorflow-hub
+keras
