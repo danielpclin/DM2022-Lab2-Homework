@@ -123,7 +123,9 @@ def train(version_num, batch_size=64):
     optimizer = tf.keras.optimizers.Adam(learning_rate)
 
     log = logging.getLogger('tensorflow')
+    log.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    os.makedirs(f'save/{version_num}', exist_ok=True)
     fh = logging.FileHandler(f'save/{version_num}/run.log')
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
@@ -145,17 +147,11 @@ def train(version_num, batch_size=64):
     x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim)(main_input)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
-    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.MaxPooling1D()(x)
-    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(units=64, dropout=0.2, recurrent_dropout=0.2))(x)
+    x = tf.keras.layers.Dense(128, activation="relu")(x)
     x = tf.keras.layers.Dropout(0.2)(x)
-    x = tf.keras.layers.Dense(256, activation="relu")(x)
-    x = tf.keras.layers.Dropout(0.3)(x)
     out = tf.keras.layers.Dense(8, activation="softmax", name="predictions")(x)
 
     model = tf.keras.Model(main_input, out)
@@ -237,7 +233,14 @@ def train(version_num, batch_size=64):
 
 
 def main():
-    train(version_num=3, batch_size=128)
+    try:
+        with open('save/run.txt') as file:
+            version_num = int(file.readline())
+    except (FileNotFoundError, ValueError):
+        version_num = 0
+    train(version_num=version_num, batch_size=128)
+    with open('save/run.txt', 'w') as file:
+        file.write(f"{version_num+1}\n")
     # for i in range(4, 10):
     #     train(version_num=i, batch_size=100)
 
