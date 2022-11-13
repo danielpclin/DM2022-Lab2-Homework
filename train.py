@@ -6,61 +6,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import logging
 
 # Setup mixed precision
 from wandb.integration.keras import WandbCallback
 
 # tf.config.set_visible_devices([], 'GPU')
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
-
-
-# Define residual blocks
-def Conv2D_BN_Activation(filters, kernel_size, padding='same', strides=(1, 1), name=None):
-    def block(input_x):
-        if name is not None:
-            bn_name = name + '_bn'
-            conv_name = name + '_conv'
-        else:
-            bn_name = None
-            conv_name = None
-        x = tf.keras.layers.Conv2D(filters, kernel_size, padding=padding, strides=strides, name=conv_name)(input_x)
-        x = tf.keras.layers.BatchNormalization(name=bn_name)(x)
-        x = tf.keras.layers.Activation('relu')(x)
-        return x
-
-    return block
-
-
-def Conv2D_Activation_BN(filters, kernel_size, padding='same', strides=(1, 1), name=None):
-    def block(input_x):
-        if name is not None:
-            bn_name = name + '_bn'
-            conv_name = name + '_conv'
-        else:
-            bn_name = None
-            conv_name = None
-        x = tf.keras.layers.Conv2D(filters, kernel_size, padding=padding, strides=strides, name=conv_name)(input_x)
-        x = tf.keras.layers.Activation('relu')(x)
-        x = tf.keras.layers.BatchNormalization(name=bn_name)(x)
-        return x
-
-    return block
-
-
-# Define Residual Block
-def Residual_Block(filters, kernel_size, strides=(1, 1), with_conv_shortcut=False):
-    def block(input_x):
-        x = Conv2D_BN_Activation(filters=filters, kernel_size=(3, 3), padding='same')(input_x)
-        x = Conv2D_BN_Activation(filters=filters, kernel_size=(3, 3), padding='same')(x)
-        # need convolution on shortcut for add different channel
-        if with_conv_shortcut:
-            shortcut = Conv2D_BN_Activation(filters=filters, strides=strides, kernel_size=kernel_size)(input_x)
-            x = tf.keras.layers.Add()([x, shortcut])
-        else:
-            x = tf.keras.layers.Add()([x, input_x])
-        return x
-
-    return block
 
 
 class MinimumEpochEarlyStopping(tf.keras.callbacks.EarlyStopping):
@@ -127,7 +79,7 @@ def plot(history, version_num):
     plt.yscale("log")
     plt.grid()
     plt.tight_layout()
-    plt.savefig(f"results/train_{version_num}.png")
+    plt.savefig(f"save/{version_num}/train.png")
     plt.close(fig)
 
     fig = plt.figure(figsize=(20, 15))
@@ -156,7 +108,7 @@ def plot(history, version_num):
     plt.yscale("log")
     plt.grid()
     plt.tight_layout()
-    plt.savefig(f"results/val_{version_num}.png")
+    plt.savefig(f"save/{version_num}/validation.png")
     plt.close(fig)
 
 
@@ -169,6 +121,13 @@ def train(version_num, batch_size=64):
     learning_rate = 0.001
     embedding_dim = 128
     optimizer = tf.keras.optimizers.Adam(learning_rate)
+
+    log = logging.getLogger('tensorflow')
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    fh = logging.FileHandler(f'save/{version_num}/run.log')
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(formatter)
+    log.addHandler(fh)
 
     print("Reading data")
     train_df = pd.read_pickle(train_pkl)
@@ -236,17 +195,13 @@ def train(version_num, batch_size=64):
     else:
         with open(f"save/{version_num}/result.pickle", "wb") as file:
             pickle.dump(train_history.history, file)
-            # with open(f"results/{version_num}.txt", "w") as file:
-            #     loss_idx = np.nanargmin(train_history.history['val_loss'])
-            #     file.write("Loss:\n")
-            #     file.write(f"{train_history.history['val_loss'][loss_idx]}\n")
-            #     acc = 1
-            #     file.write("Accuracy:\n")
-            #     for letter_idx in range(1, 13):
-            #         acc *= train_history.history[f"val_label{letter_idx}_accuracy"][loss_idx]
-            #     file.write(f"{acc}\n")
-            #
-            # plot(train_history.history, version_num)
+        with open(f"save/{version_num}/results.txt", "w") as file:
+            loss_idx = np.nanargmin(train_history.history['val_loss'])
+            file.write("Loss:\n")
+            file.write(f"{train_history.history['val_loss'][loss_idx]}\n")
+            file.write("Accuracy:\n")
+            file.write(f"{train_history.history['val_accuracy'][loss_idx]}\n")
+        plot(train_history.history, version_num)
     finally:
         run.finish()
     tf.keras.backend.clear_session()
@@ -276,39 +231,9 @@ def train(version_num, batch_size=64):
     # # x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), padding='same')(x)
     # # x = tf.keras.layers.Dropout(0.3)(x)
     # # x = tf.keras.layers.Flatten()(x)
-    # x = tf.keras.layers.Embedding(max_features + 1, embedding_dim)(x)
-    # x = tf.keras.layers.Dropout(0.2)(x)
-    # x = tf.keras.layers.GlobalAveragePooling1D()(x)
     # out = [tf.keras.layers.Dense(len(alphabet), name=f'label{i}', activation='softmax')(x) for i in range(1, 13)]
     # model = tf.keras.Model(main_input, out)
     # model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    #
-    # model.summary()
-    # train_history = model.fit(
-    #     train_generator,
-    #     steps_per_epoch=np.ceil(train_generator.n // train_generator.batch_size),
-    #     epochs=epochs,
-    #     validation_data=validation_generator,
-    #     validation_steps=np.ceil(validation_generator.n // validation_generator.batch_size),
-    #     verbose=1,
-    #     callbacks=callbacks_list
-    # )
-    # with open(f"results/{version_num}.pickle", "wb") as file:
-    #     pickle.dump(train_history.history, file)
-    # with open(f"results/{version_num}.txt", "w") as file:
-    #     loss_idx = np.nanargmin(train_history.history['val_loss'])
-    #     file.write("Loss:\n")
-    #     file.write(f"{train_history.history['val_loss'][loss_idx]}\n")
-    #     acc = 1
-    #     file.write("Accuracy:\n")
-    #     for letter_idx in range(1, 13):
-    #         acc *= train_history.history[f"val_label{letter_idx}_accuracy"][loss_idx]
-    #     file.write(f"{acc}\n")
-    #
-    # plot(train_history.history, version_num)
-    #
-    # run.finish()
-    # tf.keras.backend.clear_session()
 
 
 def main():
