@@ -11,12 +11,11 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 def predict(version_num=1):
     save_path = f'save/{version_num}'
     checkpoint_path = f'{save_path}/checkpoint.hdf5'
-    train_pkl = f"data/train.pkl"
     test_pkl = f"data/test.pkl"
     vectorizer_pkl = f"data/vectorizer.pkl"
 
-    train_df = pd.read_pickle(train_pkl)
-    encodings = pd.get_dummies(train_df['emotion']).columns
+    with open('data/emotion_encodings.pkl', 'rb') as file:
+        encodings = pickle.load(file)
 
     test_df = pd.read_pickle(test_pkl)
     print(f"{test_df.shape = }")
@@ -39,7 +38,7 @@ def predict(version_num=1):
 
 
 def main():
-    predict(2)
+    predict(20)
 
 
 if __name__ == "__main__":

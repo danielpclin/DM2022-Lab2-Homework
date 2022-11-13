@@ -67,7 +67,7 @@ def plot(history, version_num):
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend(training_accuracy_keys)
-    plt.ylim(0.8, 1)
+    # plt.ylim(0.8, 1)
     plt.grid()
 
     # Plot training loss
@@ -96,7 +96,7 @@ def plot(history, version_num):
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend(val_accuracy_keys)
-    plt.ylim(0.8, 1)
+    # plt.ylim(0.8, 1)
     plt.grid()
 
     # Plot val loss
@@ -143,25 +143,34 @@ def train(version_num, batch_size=64):
     vectorize_layer.set_weights(vectorizer_dict['weights'])
 
     train_y = pd.get_dummies(train_df['emotion'])
-    train_x, val_x, train_y, val_y = train_test_split(train_df['text'], train_y, test_size=0.2)
+    encodings = pd.get_dummies(train_y).columns
+    train_x, val_x, train_y, val_y = train_test_split(train_df['text'], train_y, test_size=0.1)
     train_x = vectorize_layer(train_x)
     val_x = vectorize_layer(val_x)
 
     input_shape = (vectorize_layer.get_config()['output_sequence_length'], )
     main_input = tf.keras.layers.Input(shape=input_shape)
     x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim)(main_input)
-    x = tf.keras.layers.Conv1D(64, 7, padding="valid", activation="relu", strides=3)(x)
-    x = tf.keras.layers.Conv1D(64, 7, padding="valid", activation="relu", strides=3)(x)
-    x = tf.keras.layers.MaxPooling1D()(x)
-    x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
-    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True, dropout=0.1, recurrent_dropout=0.1))(x)
-    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, dropout=0.1, recurrent_dropout=0.1))(x)
-    x = tf.keras.layers.Dense(64, activation="relu")(x)
-    x = tf.keras.layers.Dropout(0.4)(x)
+    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.MaxPooling1D()(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.MaxPooling1D()(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
+    # x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True, dropout=0.1, recurrent_dropout=0.1))(x)
+    # x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, dropout=0.1, recurrent_dropout=0.1))(x)
+    # x = tf.keras.layers.Dense(64, activation="relu")(x)
+    # x = tf.keras.layers.Dropout(0.4)(x)
+    x = tf.keras.layers.Flatten()(x)
     out = tf.keras.layers.Dense(8, activation="softmax", name="predictions")(x)
 
     model = tf.keras.Model(main_input, out)
@@ -184,8 +193,8 @@ def train(version_num, batch_size=64):
         "version": version_num,
         "optimizer": optimizer._name
     })
-    wandb_callback = WandbCallback(training_data=(train_x, train_y), validation_data=(val_x, val_y))
-    callbacks_list = [tensor_board, early_stop, checkpoint, reduce_lr, wandb_callback]
+    wandb_callback = WandbCallback(training_data=(train_x, train_y), validation_data=(val_x, val_y), labels=encodings, log_evaluation=True)
+    callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr, wandb_callback]
 
     try:
         train_history = model.fit(
@@ -256,4 +265,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    for _ in range(5):
+        main()
