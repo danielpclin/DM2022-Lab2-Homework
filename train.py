@@ -1,15 +1,18 @@
 import os
 import pickle
 
+from sklearn.model_selection import train_test_split
+
 import wandb
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import logging
+from wandb.integration.keras import WandbCallback
+from callbacks import ConfusionMatrixCallback
 
 # Setup mixed precision
-from wandb.integration.keras import WandbCallback
 
 # tf.config.set_visible_devices([], 'GPU')
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
@@ -122,14 +125,14 @@ def train(version_num, batch_size=64):
     embedding_dim = 128
     optimizer = tf.keras.optimizers.Adam(learning_rate)
 
-    log = logging.getLogger('tensorflow')
-    log.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    os.makedirs(f'save/{version_num}', exist_ok=True)
-    fh = logging.FileHandler(f'save/{version_num}/run.log')
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(formatter)
-    log.addHandler(fh)
+    # log = logging.getLogger('tensorflow')
+    # log.setLevel(logging.DEBUG)
+    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # os.makedirs(f'save/{version_num}', exist_ok=True)
+    # fh = logging.FileHandler(f'save/{version_num}/run.log')
+    # fh.setLevel(logging.DEBUG)
+    # fh.setFormatter(formatter)
+    # log.addHandler(fh)
 
     print("Reading data")
     train_df = pd.read_pickle(train_pkl)
@@ -139,18 +142,25 @@ def train(version_num, batch_size=64):
     vectorize_layer = tf.keras.layers.TextVectorization.from_config(vectorizer_dict['config'])
     vectorize_layer.set_weights(vectorizer_dict['weights'])
 
-    train_x = vectorize_layer(train_df['text'])
     train_y = pd.get_dummies(train_df['emotion'])
+    train_x, val_x, train_y, val_y = train_test_split(train_df['text'], train_y, test_size=0.2)
+    train_x = vectorize_layer(train_x)
+    val_x = vectorize_layer(val_x)
 
     input_shape = (vectorize_layer.get_config()['output_sequence_length'], )
     main_input = tf.keras.layers.Input(shape=input_shape)
     x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim)(main_input)
+    x = tf.keras.layers.Conv1D(64, 7, padding="valid", activation="relu", strides=3)(x)
+    x = tf.keras.layers.Conv1D(64, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(64, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.MaxPooling1D()(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
-    x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(units=64, dropout=0.2, recurrent_dropout=0.2))(x)
-    x = tf.keras.layers.Dense(128, activation="relu")(x)
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=64))(x)
+    x = tf.keras.layers.Dense(64, activation="relu")(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     out = tf.keras.layers.Dense(8, activation="softmax", name="predictions")(x)
 
@@ -182,7 +192,7 @@ def train(version_num, batch_size=64):
             train_x, train_y,
             steps_per_epoch=np.ceil(train_x.shape[0] // batch_size),
             epochs=epochs,
-            validation_split=0.2,
+            validation_data=(val_x, val_y),
             verbose=1,
             callbacks=callbacks_list
         )
