@@ -151,11 +151,6 @@ def train(version_num, batch_size=64):
     input_shape = (vectorize_layer.get_config()['output_sequence_length'], )
     main_input = tf.keras.layers.Input(shape=input_shape)
     x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim)(main_input)
-    x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.MaxPooling1D()(x)
-    x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
@@ -163,6 +158,11 @@ def train(version_num, batch_size=64):
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.MaxPooling1D()(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Conv1D(1024, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(1024, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
@@ -193,7 +193,7 @@ def train(version_num, batch_size=64):
         "version": version_num,
         "optimizer": optimizer._name
     })
-    wandb_callback = WandbCallback(training_data=(train_x, train_y), validation_data=(val_x, val_y), labels=encodings, log_evaluation=True)
+    wandb_callback = WandbCallback(training_data=(train_x, train_y), validation_data=(val_x, val_y), log_evaluation=True, labels=encodings.to_list())
     callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr, wandb_callback]
 
     try:
@@ -208,7 +208,7 @@ def train(version_num, batch_size=64):
     except KeyboardInterrupt:
         pass
     else:
-        with open(f"save/{version_num}/result.pickle", "wb") as file:
+        with open(f"save/{version_num}/result.pkl", "wb") as file:
             pickle.dump(train_history.history, file)
         with open(f"save/{version_num}/results.txt", "w") as file:
             loss_idx = np.nanargmin(train_history.history['val_loss'])

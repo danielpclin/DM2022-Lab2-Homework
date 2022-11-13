@@ -8,11 +8,8 @@ import numpy as np
 from functools import reduce
 
 # Setup mixed precision
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
-
-predicted_dict = {}
-
 
 def predict(versions=(1,), batch_size=64, method="occur_max", evaluate=False):
     train_pkl = f"data/train.pkl"
@@ -33,7 +30,18 @@ def predict(versions=(1,), batch_size=64, method="occur_max", evaluate=False):
 
     predictions = []
     for version in versions:
+        print(f"Predicting {version}...")
         save_path = f'save/{version}'
+        try:
+            with open(f"{save_path}/predict.pkl", "rb") as file:
+                print(f"file found, skipping...")
+                _prediction = pickle.load(file)
+                predictions.append(_prediction)
+        except FileNotFoundError:
+            pass
+        else:
+            continue
+        print(f"file not found, predicting with model...")
         checkpoint_path = f'{save_path}/checkpoint.hdf5'
         model = tf.keras.models.load_model(checkpoint_path)
 
@@ -46,8 +54,11 @@ def predict(versions=(1,), batch_size=64, method="occur_max", evaluate=False):
 
         _prediction = end_to_end_model.predict(df['text'], batch_size=batch_size)
         tf.keras.backend.clear_session()
+        with open(f"{save_path}/predict.pkl", "wb") as file:
+            pickle.dump(_prediction, file)
         predictions.append(_prediction)
 
+    print("Ensembling...")
     if len(versions) == 1:
         prediction = np.argmax(predictions[0], axis=1)
         df['emotion'] = prediction
@@ -56,76 +67,42 @@ def predict(versions=(1,), batch_size=64, method="occur_max", evaluate=False):
         prediction_sum_argmax = np.argmax(reduce(np.add, predictions), axis=1)
         prediction_argmax_concat = np.concatenate(np.expand_dims(np.argmax(predictions, axis=2), axis=2), axis=1)
         prediction_concat_argmax = np.argmax(np.concatenate(predictions, axis=1), axis=1)
+        result = pd.Series("", index=np.arange(prediction_argmax_concat.shape[0]))
         if method == "occur_max":
-            pass
-            # for letter_index, letter in enumerate(prediction_argmax_concat):
-            #     for label_index, label in enumerate(letter):
-            #         (values, counts) = np.unique(label, return_counts=True)
-            #         label = values[counts == counts.max()]
-            #         if len(label) > 1:
-            #             result[label_index] = result[label_index] + int_to_char[
-            #                 prediction_concat_argmax[letter_index][label_index] % len(alphabet)]
-            #         else:
-            #             result[label_index] = result[label_index] + int_to_char[label[0] % len(alphabet)]
+            for index, label in enumerate(prediction_argmax_concat):
+                (values, counts) = np.unique(label, return_counts=True)
+                label = values[counts == counts.max()]
+                if len(label) > 1:
+                    result[index] = encodings[prediction_concat_argmax[index] % len(encodings)]
+                else:
+                    result[index] = encodings[label[0] % len(encodings)]
         elif method == "occur_sum_max":
-            pass
-            # for letter_index, letter in enumerate(prediction_argmax_concat):
-            #     for label_index, label in enumerate(letter):
-            #         (values, counts) = np.unique(label, return_counts=True)
-            #         label = values[counts == counts.max()]
-            #         if len(label) > 1:
-            #             result[label_index] = result[label_index] + int_to_char[
-            #                 prediction_sum_argmax[letter_index][label_index] % len(alphabet)]
-            #         else:
-            #             result[label_index] = result[label_index] + int_to_char[label[0] % len(alphabet)]
+            for index, label in enumerate(prediction_argmax_concat):
+                (values, counts) = np.unique(label, return_counts=True)
+                label = values[counts == counts.max()]
+                if len(label) > 1:
+                    result[index] = encodings[prediction_sum_argmax[index] % len(encodings)]
+                else:
+                    result[index] = encodings[label[0] % len(encodings)]
         elif method == "max":
-            pass
-            # for letter in prediction_concat_argmax:
-            #     for index, label in enumerate(letter):
-            #         result[index] = result[index] + int_to_char[label % len(alphabet)]
+            for index, label in enumerate(prediction_concat_argmax):
+                result[index] = encodings[label % len(encodings)]
         elif method == "sum_max":
-            pass
-            # for letter in prediction_sum_argmax:
-            #     for index, label in enumerate(letter):
-            #         result[index] = result[index] + int_to_char[label % len(alphabet)]
+            for index, label in enumerate(prediction_sum_argmax):
+                result[index] = encodings[label % len(encodings)]
+        df.reset_index(inplace=True)
+        df['emotion'] = result
 
-    df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"_".join(versions)}/prediction.csv', index=False, columns=['id', 'emotion'])
     if len(versions) == 1:
-        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{versions[0]}/prediction.csv', index=False, columns=['id', 'emotion'])
+        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{versions[0]}/prediction.csv',
+                                                     index=False, columns=['id', 'emotion'])
     else:
-        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"_".join(map(str, versions))}_{method}_prediction.csv', index=False, columns=['id', 'emotion'])
+        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"_".join(map(str, versions))}_{method}_prediction.csv',
+                                                     index=False, columns=['id', 'emotion'])
 
-
-
-    # for version in versions:
-    #     filename = f"predicted_result/{'eval_' if evaluate else ''}{version}.pickle"
-    #     if version in predicted_dict:
-    #         _prediction = predicted_dict[version]
-    #     elif os.path.isfile(filename):
-    #         with open(filename, 'rb') as f:
-    #             _prediction = pickle.load(f)
-    #             predicted_dict[version] = _prediction
-    #     else:
-    #         checkpoint_path = f'checkpoints/{version}.hdf5'
-    #         image_data_generator = ImageDataGenerator(rescale=1. / 255)
-    #         predict_generator = image_data_generator.flow_from_dataframe(dataframe=df, directory=predict_dataset_dir,
-    #                                                                      x_col=x_col, class_mode=None, shuffle=False,
-    #                                                                      target_size=(img_height, img_width),
-    #                                                                      batch_size=batch_size)
-    #         model = models.load_model(checkpoint_path)
-    #         _prediction = model.predict(
-    #             predict_generator,
-    #             steps=np.ceil(predict_generator.n / predict_generator.batch_size),
-    #             verbose=1,
-    #         )
-    #         K.clear_session()
-    #         with open(filename, 'wb') as f:
-    #             pickle.dump(_prediction, f)
-    #         predicted_dict[version] = _prediction
-    #     predictions.append(_prediction)
 
 def main():
-    predict(versions=(23, 24), batch_size=64, method="sum_max", evaluate=False)
+    predict(versions=(21, 22, 23, 24), batch_size=128, method="occur_max", evaluate=False)
 
 
 if __name__ == "__main__":

@@ -31,7 +31,28 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="\save\21_22_23_24_occur_max_prediction.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="\save\23_24_sum_max_prediction.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="\save_dir\baseline\submission.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="\save_dir\test1\submission.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
