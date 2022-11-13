@@ -159,7 +159,7 @@ def train(version_num, batch_size=64):
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
-    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=64))(x)
+    x = tf.keras.layers.LSTM(units=64)(x)
     x = tf.keras.layers.Dense(64, activation="relu")(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     out = tf.keras.layers.Dense(8, activation="softmax", name="predictions")(x)
@@ -184,7 +184,7 @@ def train(version_num, batch_size=64):
         "version": version_num,
         "optimizer": optimizer._name
     })
-    wandb_callback = WandbCallback()
+    wandb_callback = WandbCallback(training_data=(train_x, train_y), validation_data=(val_x, val_y))
     callbacks_list = [tensor_board, early_stop, checkpoint, reduce_lr, wandb_callback]
 
     try:
