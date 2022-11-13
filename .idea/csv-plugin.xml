@@ -24,6 +24,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="\save\1\prediction.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="\save_dir\baseline\submission.csv">
           <value>
             <Attribute>

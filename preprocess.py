@@ -15,8 +15,8 @@ DATA_ID_PATH = f'{DATA_DIR}/data_identification.csv'
 EMOTION_PATH = f'{DATA_DIR}/emotion.csv'
 TWEETS_PATH = f'{DATA_DIR}/tweets_DM.json'
 SAMPLE_PATH = f'{DATA_DIR}/sampleSubmission.csv'
-TRAIN_PKL = f"data/train.h5"
-TEST_PKL = f"data/test.h5"
+TRAIN_PKL = f"data/train.pkl"
+TEST_PKL = f"data/test.pkl"
 VECTORIZER_PKL = f"data/vectorizer.pkl"
 
 print(f"Reading data...")

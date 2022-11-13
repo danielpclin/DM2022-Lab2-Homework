@@ -161,62 +161,96 @@ def plot(history, version_num):
 
 
 def train(version_num, batch_size=64):
-    train_pkl = f"data/train.h5"
-    test_pkl = f"data/test.h5"
+    train_pkl = f"data/train.pkl"
     vectorizer_pkl = f"data/vectorizer.pkl"
-    checkpoint_path = f'save/{version_num}.hdf5'
-    log_dir = f'save/{version_num}.log'
+    checkpoint_path = f'save/{version_num}/checkpoint.hdf5'
+    log_dir = f'save/{version_num}'
     epochs = 100
     learning_rate = 0.001
-    embedding_dim = 256
+    embedding_dim = 128
+    optimizer = tf.keras.optimizers.Adam(learning_rate)
 
     print("Reading data")
-    # noinspection PyTypeChecker
     train_df = pd.read_pickle(train_pkl)
-    # noinspection PyTypeChecker
-    test_df = pd.read_pickle(test_pkl)
     print(f"{train_df.shape = }")
-    print(f"{test_df.shape = }")
 
     vectorizer_dict = pickle.load(open(vectorizer_pkl, "rb"))
     vectorize_layer = tf.keras.layers.TextVectorization.from_config(vectorizer_dict['config'])
     vectorize_layer.set_weights(vectorizer_dict['weights'])
 
-    vectorized_train_text = vectorize_layer(train_df['text'])
-    # vectorized_test_text = vectorize_layer(test_df['text'])
+    train_x = vectorize_layer(train_df['text'])
+    train_y = pd.get_dummies(train_df['emotion'])
 
+    input_shape = (vectorize_layer.get_config()['output_sequence_length'], )
+    main_input = tf.keras.layers.Input(shape=input_shape)
+    x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim)(main_input)
+    x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.MaxPooling1D()(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.MaxPooling1D()(x)
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Dense(256, activation="relu")(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
+    out = tf.keras.layers.Dense(8, activation="softmax", name="predictions")(x)
 
-    # optimizer = tf.keras.optimizers.Adam(learning_rate)
-    # run = wandb.init(project="china_steel_ocr", entity="danielpclin", reinit=True, config={
-    #     "learning_rate": learning_rate,
-    #     "epochs": epochs,
-    #     "batch_size": batch_size,
-    #     "version": version_num,
-    #     "optimizer": optimizer._name
-    # })
-    # img_width = 1232
-    # img_height = 1028
-    # alphabet = list('ABCDEFGHIJKLMNPQRSTUVWXYZ0123456789 ')
-    # char_to_int = dict((c, i) for i, c in enumerate(alphabet))
-    # int_to_char = dict((i, c) for i, c in enumerate(alphabet))
-    # df = pd.read_csv(f'{training_dataset_csv}', delimiter=',')
-    # df['filename'] = df['filename'] + '.jpg'
-    # df['label'] = df['label'].apply(lambda el: list(el.ljust(12)))
-    # df[[f'label{i}' for i in range(1, 13)]] = pd.DataFrame(df['label'].to_list(), index=df.index)
-    # for i in range(1, 13):
-    #     df[f'label{i}'] = df[f'label{i}'].apply(lambda el: tf.keras.utils.to_categorical(char_to_int[el], len(alphabet)))
-    # data_gen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1. / 255, validation_split=0.1)
-    # train_generator = data_gen.flow_from_dataframe(dataframe=df, directory=training_dataset_dir, subset='training',
-    #                                                x_col="filename", y_col=[f'label{i}' for i in range(1, 13)],
-    #                                                class_mode="multi_output",
-    #                                                target_size=(img_height, img_width), batch_size=batch_size)
-    # validation_generator = data_gen.flow_from_dataframe(dataframe=df, directory=training_dataset_dir,
-    #                                                     subset='validation',
-    #                                                     x_col="filename", y_col=[f'label{i}' for i in range(1, 13)],
-    #                                                     class_mode="multi_output",
-    #                                                     target_size=(img_height, img_width), batch_size=batch_size)
-    # input_shape = (img_height, img_width, 3)
-    # main_input = tf.keras.layers.Input(shape=input_shape)
+    model = tf.keras.Model(main_input, out)
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    model.summary()
+
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True,
+                                                    save_weights_only=False, mode='auto')
+    early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, verbose=1, mode='auto')
+    # early_stop = MinimumEpochEarlyStopping(monitor='val_loss', patience=5, verbose=1, mode='auto', min_epoch=1)
+    tensor_board = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, cooldown=1,
+                                                     mode='auto', min_lr=0.00001)
+    # reduce_lr = MinimumEpochReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, cooldown=1, mode='auto',
+    #                                           min_lr=0.00001, min_epoch=1)
+    run = wandb.init(project="twitter_sentiment", entity="danielpclin", reinit=True, config={
+        "learning_rate": learning_rate,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "version": version_num,
+        "optimizer": optimizer._name
+    })
+    wandb_callback = WandbCallback()
+    callbacks_list = [tensor_board, early_stop, checkpoint, reduce_lr, wandb_callback]
+
+    try:
+        train_history = model.fit(
+            train_x, train_y,
+            steps_per_epoch=np.ceil(train_x.shape[0] // batch_size),
+            epochs=epochs,
+            validation_split=0.2,
+            verbose=1,
+            callbacks=callbacks_list
+        )
+    except KeyboardInterrupt:
+        pass
+    else:
+        with open(f"save/{version_num}/result.pickle", "wb") as file:
+            pickle.dump(train_history.history, file)
+            # with open(f"results/{version_num}.txt", "w") as file:
+            #     loss_idx = np.nanargmin(train_history.history['val_loss'])
+            #     file.write("Loss:\n")
+            #     file.write(f"{train_history.history['val_loss'][loss_idx]}\n")
+            #     acc = 1
+            #     file.write("Accuracy:\n")
+            #     for letter_idx in range(1, 13):
+            #         acc *= train_history.history[f"val_label{letter_idx}_accuracy"][loss_idx]
+            #     file.write(f"{acc}\n")
+            #
+            # plot(train_history.history, version_num)
+    finally:
+        run.finish()
+    tf.keras.backend.clear_session()
+
     # x = main_input
     # # x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
     # # x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
@@ -248,15 +282,6 @@ def train(version_num, batch_size=64):
     # out = [tf.keras.layers.Dense(len(alphabet), name=f'label{i}', activation='softmax')(x) for i in range(1, 13)]
     # model = tf.keras.Model(main_input, out)
     # model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    # checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True,
-    #                              save_weights_only=False, mode='auto')
-    #
-    # early_stop = MinimumEpochEarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='auto', min_epoch=20)
-    # tensor_board = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-    # reduce_lr = MinimumEpochReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, cooldown=1, mode='auto',
-    #                                           min_lr=0.00001, min_epoch=15)
-    # wandb_callback = WandbCallback()
-    # callbacks_list = [tensor_board, early_stop, checkpoint, reduce_lr, wandb_callback]
     #
     # model.summary()
     # train_history = model.fit(
@@ -287,7 +312,9 @@ def train(version_num, batch_size=64):
 
 
 def main():
-    train(version_num=1, batch_size=64)
+    train(version_num=3, batch_size=128)
+    # for i in range(4, 10):
+    #     train(version_num=i, batch_size=100)
 
 
 if __name__ == "__main__":
