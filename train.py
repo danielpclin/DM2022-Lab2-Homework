@@ -151,17 +151,17 @@ def train(version_num, batch_size=64):
     main_input = tf.keras.layers.Input(shape=input_shape)
     x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim)(main_input)
     x = tf.keras.layers.Conv1D(64, 7, padding="valid", activation="relu", strides=3)(x)
-    x = tf.keras.layers.Conv1D(64, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.Conv1D(64, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(64, 7, padding="valid", activation="relu", strides=3)(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
-    x = tf.keras.layers.LSTM(units=64)(x)
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True, dropout=0.1, recurrent_dropout=0.1))(x)
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, dropout=0.1, recurrent_dropout=0.1))(x)
     x = tf.keras.layers.Dense(64, activation="relu")(x)
-    x = tf.keras.layers.Dropout(0.2)(x)
+    x = tf.keras.layers.Dropout(0.4)(x)
     out = tf.keras.layers.Dense(8, activation="softmax", name="predictions")(x)
 
     model = tf.keras.Model(main_input, out)
@@ -190,7 +190,7 @@ def train(version_num, batch_size=64):
     try:
         train_history = model.fit(
             train_x, train_y,
-            steps_per_epoch=np.ceil(train_x.shape[0] // batch_size),
+            steps_per_epoch=np.ceil(train_x.shape[0] / batch_size),
             epochs=epochs,
             validation_data=(val_x, val_y),
             verbose=1,
