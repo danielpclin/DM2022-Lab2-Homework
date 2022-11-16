@@ -9,12 +9,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import logging
+import xgboost as xgb
 from wandb.integration.keras import WandbCallback
 from callbacks import ConfusionMatrixCallback
 
 # Setup mixed precision
 
-# tf.config.set_visible_devices([], 'GPU')
+tf.config.set_visible_devices([], 'GPU')
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
 
@@ -151,23 +152,34 @@ def train(version_num, batch_size=64):
     input_shape = (vectorize_layer.get_config()['output_sequence_length'], )
     main_input = tf.keras.layers.Input(shape=input_shape)
     x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim)(main_input)
+    x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
+    # x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
+    # x = tf.keras.layers.Conv1D(128, 5, padding="valid", activation="relu", strides=2)(x)
+    # x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.MaxPooling1D()(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
+    # x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
+    # x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
+    # x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
+    # x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
-    x = tf.keras.layers.Conv1D(1024, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.Conv1D(1024, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.MaxPooling1D()(x)
-    x = tf.keras.layers.Dropout(0.2)(x)
-    # x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True, dropout=0.1, recurrent_dropout=0.1))(x)
-    # x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, dropout=0.1, recurrent_dropout=0.1))(x)
+    # x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True, dropout=0.1))(x)
+    # x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True, dropout=0.1))(x)
+    # x = tf.keras.layers.Dropout(0.4)(x)
+    # x = tf.keras.layers.Conv1D(256, 3, padding="same", activation="relu", strides=1)(x)
+    # x = tf.keras.layers.Conv1D(256, 3, padding="same", activation="relu", strides=1)(x)
+    # x = tf.keras.layers.Conv1D(256, 3, padding="same", activation="relu", strides=1)(x)
     # x = tf.keras.layers.Dense(64, activation="relu")(x)
     # x = tf.keras.layers.Dropout(0.4)(x)
     x = tf.keras.layers.Flatten()(x)
@@ -179,22 +191,20 @@ def train(version_num, batch_size=64):
 
     checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True,
                                                     save_weights_only=False, mode='auto')
-    early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, verbose=1, mode='auto')
-    # early_stop = MinimumEpochEarlyStopping(monitor='val_loss', patience=5, verbose=1, mode='auto', min_epoch=1)
+    early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=6, verbose=1, mode='auto')
     tensor_board = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, cooldown=1,
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, cooldown=1,
                                                      mode='auto', min_lr=0.00001)
-    # reduce_lr = MinimumEpochReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, cooldown=1, mode='auto',
-    #                                           min_lr=0.00001, min_epoch=1)
-    run = wandb.init(project="twitter_sentiment", entity="danielpclin", reinit=True, config={
-        "learning_rate": learning_rate,
-        "epochs": epochs,
-        "batch_size": batch_size,
-        "version": version_num,
-        "optimizer": optimizer._name
-    })
-    wandb_callback = WandbCallback(training_data=(train_x, train_y), validation_data=(val_x, val_y), log_evaluation=True, labels=encodings.to_list())
-    callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr, wandb_callback]
+    # run = wandb.init(project="twitter_sentiment", entity="danielpclin", reinit=True, config={
+    #     "learning_rate": learning_rate,
+    #     "epochs": epochs,
+    #     "batch_size": batch_size,
+    #     "version": version_num,
+    #     "optimizer": optimizer._name
+    # })
+    # wandb_callback = WandbCallback()
+    # callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr, wandb_callback]
+    callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr]
 
     try:
         train_history = model.fit(
@@ -218,37 +228,44 @@ def train(version_num, batch_size=64):
             file.write(f"{train_history.history['val_accuracy'][loss_idx]}\n")
         plot(train_history.history, version_num)
     finally:
-        run.finish()
+        # run.finish()
+        pass
     tf.keras.backend.clear_session()
 
-    # x = main_input
-    # # x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
-    # # x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
-    # # x = tf.keras.layers.Conv2D(filters=64, kernel_size=(7, 7), activation='relu')(x)
-    # # x = Conv2D_BN_Activation(filters=64, kernel_size=(7, 7))(x)
-    # # x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), padding='same')(x)
-    # # x = Residual_Block(filters=64, kernel_size=(3, 3))(x)
-    # # x = Residual_Block(filters=64, kernel_size=(3, 3))(x)
-    # # x = Residual_Block(filters=64, kernel_size=(3, 3))(x)
-    # # x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), padding='same')(x)
-    # # x = tf.keras.layers.Dropout(0.2)(x)
-    # # x = Residual_Block(filters=128, kernel_size=(3, 3), with_conv_shortcut=True)(x)
-    # # x = Residual_Block(filters=128, kernel_size=(3, 3))(x)
-    # # x = Residual_Block(filters=128, kernel_size=(3, 3))(x)
-    # # x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), padding='same')(x)
-    # # x = tf.keras.layers.Dropout(0.2)(x)
-    # # x = Residual_Block(filters=256, kernel_size=(3, 3), with_conv_shortcut=True)(x)
-    # # x = Residual_Block(filters=256, kernel_size=(3, 3))(x)
-    # # x = Residual_Block(filters=256, kernel_size=(3, 3))(x)
-    # # x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), padding='same')(x)
-    # # x = tf.keras.layers.Dropout(0.3)(x)
-    # # x = Conv2D_BN_Activation(filters=256, kernel_size=(3, 3))(x)
-    # # x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), padding='same')(x)
-    # # x = tf.keras.layers.Dropout(0.3)(x)
-    # # x = tf.keras.layers.Flatten()(x)
-    # out = [tf.keras.layers.Dense(len(alphabet), name=f'label{i}', activation='softmax')(x) for i in range(1, 13)]
-    # model = tf.keras.Model(main_input, out)
-    # model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+
+def train_xgboost():
+    train_pkl = f"data/train.pkl"
+    vectorizer_pkl = f"data/vectorizer.pkl"
+
+    print("Reading data")
+    train_df = pd.read_pickle(train_pkl)
+    print(f"{train_df.shape = }")
+
+    vectorizer_dict = pickle.load(open(vectorizer_pkl, "rb"))
+    vectorize_layer = tf.keras.layers.TextVectorization.from_config(vectorizer_dict['config'])
+    vectorize_layer.set_weights(vectorizer_dict['weights'])
+
+    train_y = pd.get_dummies(train_df['emotion']).to_numpy().argmax(axis=1)
+    train_x, val_x, train_y, val_y = train_test_split(train_df['text'], train_y, test_size=0.1)
+    train_x = vectorize_layer(train_x)
+    val_x = vectorize_layer(val_x)
+
+    params = {
+        "objective": "multi:softprob",
+        "eta": 0.3,
+        "max_depth": 6,
+        "min_child_weight": 1,
+        "verbosity": 1,
+        # "seed": 1,
+        "num_class": 8,
+    }
+    num_trees = 100
+    gbm = xgb.train(params, xgb.DMatrix(train_x, train_y), num_trees)
+
+    print("Make predictions on the test set")
+    test_probs = gbm.predict(xgb.DMatrix(val_x))
+    print(f"Accuracy: {np.mean(test_probs.argmax(axis=1) == val_y)}")
+    print()
 
 
 def main():
@@ -260,10 +277,9 @@ def main():
     train(version_num=version_num, batch_size=128)
     with open('save/run.txt', 'w') as file:
         file.write(f"{version_num+1}\n")
-    # for i in range(4, 10):
-    #     train(version_num=i, batch_size=100)
 
 
 if __name__ == "__main__":
-    for _ in range(5):
-        main()
+    train_xgboost()
+    # for _ in range(40):
+    #     main()

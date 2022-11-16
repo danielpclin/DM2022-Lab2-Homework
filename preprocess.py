@@ -38,20 +38,20 @@ print("Saving dataframes")
 tweet_train.to_pickle(TRAIN_PKL)
 tweet_test.to_pickle(TEST_PKL)
 
-# print("Adapting text vectorization")
-# max_features = 20000
-# sequence_length = 128
-# vectorize_layer = tf.keras.layers.TextVectorization(
-#     max_tokens=max_features,
-#     output_mode="int",
-#     output_sequence_length=sequence_length,
-# )
-# vectorize_layer.adapt(tweet_train['text'])  # adapt dataset
-#
-# print("Saving text vectorization")
-# pickle.dump({'config': vectorize_layer.get_config(), 'weights': vectorize_layer.get_weights()},
-#             open(VECTORIZER_PKL, "wb"))
-# print(f"Max length: {np.max(np.count_nonzero(vectorize_layer(tweet_train['text']), axis=1))}")
+print("Adapting text vectorization")
+max_features = 200000
+sequence_length = 128
+vectorize_layer = tf.keras.layers.TextVectorization(
+    max_tokens=max_features,
+    output_mode="int",
+    output_sequence_length=sequence_length,
+)
+vectorize_layer.adapt(tweet_train['text'])  # adapt dataset
+
+print("Saving text vectorization")
+pickle.dump({'config': vectorize_layer.get_config(), 'weights': vectorize_layer.get_weights()},
+            open(VECTORIZER_PKL, "wb"))
+print(f"Max length: {np.max(np.count_nonzero(vectorize_layer(tweet_train['text']), axis=1))}")
 
 encodings = pd.get_dummies(tweet_train['emotion']).columns
 with open('data/emotion_encodings.pkl', 'wb') as file:

@@ -23,6 +23,8 @@ def predict(version_num=1):
     vectorizer_dict = pickle.load(open(vectorizer_pkl, "rb"))
     vectorize_layer = tf.keras.layers.TextVectorization.from_config(vectorizer_dict['config'])
     vectorize_layer.set_weights(vectorizer_dict['weights'])
+    print(vectorize_layer.get_vocabulary())
+    return
 
     test_x = vectorize_layer(test_df['text'])
 

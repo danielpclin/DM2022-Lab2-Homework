@@ -8,7 +8,7 @@ import numpy as np
 from functools import reduce
 
 # Setup mixed precision
-# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
 def predict(versions=(1,), batch_size=64, method="occur_max", evaluate=False):
@@ -102,7 +102,7 @@ def predict(versions=(1,), batch_size=64, method="occur_max", evaluate=False):
 
 
 def main():
-    predict(versions=(21, 22, 23, 24), batch_size=128, method="occur_max", evaluate=False)
+    predict(versions=(41, 42), batch_size=128, method="occur_max", evaluate=False)
 
 
 if __name__ == "__main__":
