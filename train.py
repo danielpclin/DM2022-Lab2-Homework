@@ -1,17 +1,13 @@
-import os
 import pickle
 
 from sklearn.model_selection import train_test_split
-from transformers import DistilBertTokenizer, TFDistilBertModel
+from transformers import TFDistilBertModel
 
-import wandb
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import logging
 import xgboost as xgb
-from wandb.integration.keras import WandbCallback
 
 # Setup mixed precision
 
@@ -68,7 +64,6 @@ def plot(history, version_num):
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend(training_accuracy_keys)
-    # plt.ylim(0.8, 1)
     plt.grid()
 
     # Plot training loss
@@ -97,7 +92,6 @@ def plot(history, version_num):
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend(val_accuracy_keys)
-    # plt.ylim(0.8, 1)
     plt.grid()
 
     # Plot val loss

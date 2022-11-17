@@ -1,14 +1,10 @@
-import os
 import pickle
 
 import pandas as pd
 import tensorflow as tf
 import numpy as np
-from transformers import TFDistilBertModel
 
-
-# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-
+# tf.config.set_visible_devices([], 'GPU')
 
 def predict(version_num=1):
     save_path = f'save/{version_num}'

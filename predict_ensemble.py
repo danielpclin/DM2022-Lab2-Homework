@@ -1,16 +1,13 @@
-import itertools
-import os
 import pickle
 
 import pandas as pd
 import tensorflow as tf
 import numpy as np
 from functools import reduce
-from transformers import TFDistilBertModel
 
 
 # Setup mixed precision
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# tf.config.set_visible_devices([], 'GPU')
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
 
@@ -40,8 +37,8 @@ def predict_bert(versions=(1,), batch_size=32):
         else:
             continue
         print(f"file not found, predicting with model...")
-        checkpoint_path = f'{save_path}/checkpoint.hdf5'
-        model = tf.keras.models.load_model(checkpoint_path, custom_objects={"TFDistilBertModel": TFDistilBertModel})
+        checkpoint_path = f'{save_path}/checkpoint.tf'
+        model = tf.keras.models.load_model(checkpoint_path)
 
         _prediction = model.predict([test_inputs, test_mask], batch_size=batch_size)
         tf.keras.backend.clear_session()
@@ -138,10 +135,10 @@ def predict(versions=(1,), method="occur_max", bert=False):
         df['emotion'] = result
 
     if len(versions) == 1:
-        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{versions[0]}/prediction.csv',
+        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"bert_" if bert else ""}{versions[0]}/prediction.csv',
                                                      index=False, columns=['id', 'emotion'])
     else:
-        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"_".join(map(str, versions))}_{method}_prediction.csv',
+        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"bert_" if bert else ""}{"_".join(map(str, versions))}_{method}_prediction.csv',
                                                      index=False, columns=['id', 'emotion'])
 
 
