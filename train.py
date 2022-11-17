@@ -2,6 +2,7 @@ import os
 import pickle
 
 from sklearn.model_selection import train_test_split
+from transformers import DistilBertTokenizer, TFDistilBertModel
 
 import wandb
 import pandas as pd
@@ -11,11 +12,10 @@ import tensorflow as tf
 import logging
 import xgboost as xgb
 from wandb.integration.keras import WandbCallback
-from callbacks import ConfusionMatrixCallback
 
 # Setup mixed precision
 
-tf.config.set_visible_devices([], 'GPU')
+# tf.config.set_visible_devices([], 'GPU')
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
 
@@ -126,15 +126,6 @@ def train(version_num, batch_size=64):
     embedding_dim = 128
     optimizer = tf.keras.optimizers.Adam(learning_rate)
 
-    # log = logging.getLogger('tensorflow')
-    # log.setLevel(logging.DEBUG)
-    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    # os.makedirs(f'save/{version_num}', exist_ok=True)
-    # fh = logging.FileHandler(f'save/{version_num}/run.log')
-    # fh.setLevel(logging.DEBUG)
-    # fh.setFormatter(formatter)
-    # log.addHandler(fh)
-
     print("Reading data")
     train_df = pd.read_pickle(train_pkl)
     print(f"{train_df.shape = }")
@@ -144,7 +135,6 @@ def train(version_num, batch_size=64):
     vectorize_layer.set_weights(vectorizer_dict['weights'])
 
     train_y = pd.get_dummies(train_df['emotion'])
-    encodings = pd.get_dummies(train_y).columns
     train_x, val_x, train_y, val_y = train_test_split(train_df['text'], train_y, test_size=0.1)
     train_x = vectorize_layer(train_x)
     val_x = vectorize_layer(val_x)
@@ -154,34 +144,19 @@ def train(version_num, batch_size=64):
     x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim)(main_input)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
-    # x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
-    # x = tf.keras.layers.Conv1D(128, 5, padding="valid", activation="relu", strides=2)(x)
-    # x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
-    # x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
-    # x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
-    # x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
-    # x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
-    # x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True, dropout=0.1))(x)
-    # x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True, dropout=0.1))(x)
-    # x = tf.keras.layers.Dropout(0.4)(x)
-    # x = tf.keras.layers.Conv1D(256, 3, padding="same", activation="relu", strides=1)(x)
-    # x = tf.keras.layers.Conv1D(256, 3, padding="same", activation="relu", strides=1)(x)
-    # x = tf.keras.layers.Conv1D(256, 3, padding="same", activation="relu", strides=1)(x)
-    # x = tf.keras.layers.Dense(64, activation="relu")(x)
-    # x = tf.keras.layers.Dropout(0.4)(x)
     x = tf.keras.layers.Flatten()(x)
     out = tf.keras.layers.Dense(8, activation="softmax", name="predictions")(x)
 
@@ -195,15 +170,6 @@ def train(version_num, batch_size=64):
     tensor_board = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, cooldown=1,
                                                      mode='auto', min_lr=0.00001)
-    # run = wandb.init(project="twitter_sentiment", entity="danielpclin", reinit=True, config={
-    #     "learning_rate": learning_rate,
-    #     "epochs": epochs,
-    #     "batch_size": batch_size,
-    #     "version": version_num,
-    #     "optimizer": optimizer._name
-    # })
-    # wandb_callback = WandbCallback()
-    # callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr, wandb_callback]
     callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr]
 
     try:
@@ -228,7 +194,6 @@ def train(version_num, batch_size=64):
             file.write(f"{train_history.history['val_accuracy'][loss_idx]}\n")
         plot(train_history.history, version_num)
     finally:
-        # run.finish()
         pass
     tf.keras.backend.clear_session()
 
@@ -256,16 +221,99 @@ def train_xgboost():
         "max_depth": 6,
         "min_child_weight": 1,
         "verbosity": 1,
-        # "seed": 1,
         "num_class": 8,
     }
-    num_trees = 100
+    num_trees = 300
     gbm = xgb.train(params, xgb.DMatrix(train_x, train_y), num_trees)
 
     print("Make predictions on the test set")
     test_probs = gbm.predict(xgb.DMatrix(val_x))
     print(f"Accuracy: {np.mean(test_probs.argmax(axis=1) == val_y)}")
-    print()
+
+
+def train_bert(version_num, batch_size=32):
+    train_pkl = f"data/train.pkl"
+    pickle_inp_path = './data/dbert_inputs.pkl'
+    pickle_mask_path = './data/dbert_mask.pkl'
+    pickle_label_path = './data/dbert_label.pkl'
+    checkpoint_path = f'save/bert_{version_num}/checkpoint.tf'
+    log_dir = f'save/bert_{version_num}'
+    epochs = 30
+    max_len = 256
+
+    print("Reading data")
+    train_df = pd.read_pickle(train_pkl)
+    print(f"{train_df.shape = }")
+
+    train_y = train_df['emotion']
+    num_classes = len(train_y.unique())
+
+    print('Loading the saved pickle files..')
+    input_ids = pickle.load(open(pickle_inp_path, 'rb'))
+    attention_masks = pickle.load(open(pickle_mask_path, 'rb'))
+    labels = pickle.load(open(pickle_label_path, 'rb'))
+    labels = pd.get_dummies(labels)
+
+    print(f'Input shape {input_ids.shape}')
+    print(f'Attention mask shape {attention_masks.shape}')
+    print(f'Input label shape {labels.shape}')
+    train_inputs, val_inputs, train_label, val_label, train_mask, val_mask = train_test_split(input_ids, labels,
+                                                                                              attention_masks,
+                                                                                              test_size=0.1)
+
+    print(f'Train inp shape {train_inputs.shape} Val input shape {val_inputs.shape}')
+    print(f"Train label shape {train_label.shape} Val label shape {val_label.shape}")
+    print(f"Train attention mask shape {train_mask.shape} Val attention mask shape {val_mask.shape}")
+
+    # Setup model
+    dbert_model = TFDistilBertModel.from_pretrained('distilbert-base-uncased')
+
+    inputs = tf.keras.layers.Input(shape=(max_len,), dtype='int64')
+    masks = tf.keras.layers.Input(shape=(max_len,), dtype='int64')
+    dbert_layer = dbert_model(inputs, attention_mask=masks)[0][:, 0, :]
+    dense = tf.keras.layers.Dense(256, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01))(dbert_layer)
+    dropout = tf.keras.layers.Dropout(0.5)(dense)
+    pred = tf.keras.layers.Dense(num_classes, activation='softmax', kernel_regularizer=tf.keras.regularizers.l2(0.01))(dropout)
+    model = tf.keras.Model(inputs=[inputs, masks], outputs=pred)
+
+    loss = tf.keras.losses.CategoricalCrossentropy()
+    metric = tf.keras.metrics.CategoricalAccuracy('accuracy')
+    optimizer = tf.keras.optimizers.Adam(learning_rate=3e-5)
+    model.compile(loss=loss, optimizer=optimizer, metrics=[metric])
+    model.summary()
+
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True,
+                                                    save_weights_only=False, mode='auto')
+    early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, verbose=1, mode='auto')
+    tensor_board = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, cooldown=1,
+                                                     mode='auto', min_lr=0.00001)
+    callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr]
+
+    try:
+        train_history = model.fit(
+            [train_inputs, train_mask], train_label,
+            steps_per_epoch=np.ceil(train_inputs.shape[0] / batch_size),
+            epochs=epochs,
+            validation_data=([val_inputs, val_mask], val_label),
+            verbose=1,
+            callbacks=callbacks_list
+        )
+    except KeyboardInterrupt:
+        pass
+    else:
+        with open(f"save/{version_num}/result.pkl", "wb") as file:
+            pickle.dump(train_history.history, file)
+        with open(f"save/{version_num}/results.txt", "w") as file:
+            loss_idx = np.nanargmin(train_history.history['val_loss'])
+            file.write("Loss:\n")
+            file.write(f"{train_history.history['val_loss'][loss_idx]}\n")
+            file.write("Accuracy:\n")
+            file.write(f"{train_history.history['val_accuracy'][loss_idx]}\n")
+        plot(train_history.history, version_num)
+    finally:
+        pass
+    tf.keras.backend.clear_session()
 
 
 def main():
@@ -274,12 +322,13 @@ def main():
             version_num = int(file.readline())
     except (FileNotFoundError, ValueError):
         version_num = 0
-    train(version_num=version_num, batch_size=128)
+    # train(version_num=version_num, batch_size=128)
+    # train_xgboost()
+    train_bert(version_num=version_num, batch_size=32)
     with open('save/run.txt', 'w') as file:
         file.write(f"{version_num+1}\n")
 
 
 if __name__ == "__main__":
-    train_xgboost()
-    # for _ in range(40):
-    #     main()
+    for _ in range(2):
+        main()

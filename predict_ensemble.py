@@ -6,27 +6,56 @@ import pandas as pd
 import tensorflow as tf
 import numpy as np
 from functools import reduce
+from transformers import TFDistilBertModel
+
 
 # Setup mixed precision
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
-def predict(versions=(1,), batch_size=64, method="occur_max", evaluate=False):
-    train_pkl = f"data/train.pkl"
-    test_pkl = f"data/test.pkl"
-    vectorizer_pkl = f"data/vectorizer.pkl"
 
+def predict_bert(versions=(1,), batch_size=32):
+    print('Preparing the pickle file.....')
+    pickle_input_path = './data/dbert_test_inputs.pkl'
+    pickle_mask_path = './data/dbert_test_mask.pkl'
+
+    print('Loading the saved pickle files..')
+    test_inputs = pickle.load(open(pickle_input_path, 'rb'))
+    test_mask = pickle.load(open(pickle_mask_path, 'rb'))
+
+    print(f'Test input shape {test_inputs.shape}')
+    print(f"Test attention mask shape {test_mask.shape}")
+
+    predictions = []
+    for version in versions:
+        print(f"Predicting bert {version}...")
+        save_path = f'save/bert_{version}'
+        try:
+            with open(f"{save_path}/predict.pkl", "rb") as file:
+                print(f"file found, skipping...")
+                _prediction = pickle.load(file)
+                predictions.append(_prediction)
+        except FileNotFoundError:
+            pass
+        else:
+            continue
+        print(f"file not found, predicting with model...")
+        checkpoint_path = f'{save_path}/checkpoint.hdf5'
+        model = tf.keras.models.load_model(checkpoint_path, custom_objects={"TFDistilBertModel": TFDistilBertModel})
+
+        _prediction = model.predict([test_inputs, test_mask], batch_size=batch_size)
+        tf.keras.backend.clear_session()
+        with open(f"{save_path}/predict.pkl", "wb") as file:
+            pickle.dump(_prediction, file)
+        predictions.append(_prediction)
+    return predictions
+
+
+def predict_cnn(df, versions=(1,), batch_size=64):
+    vectorizer_pkl = f"data/vectorizer.pkl"
     vectorizer_dict = pickle.load(open(vectorizer_pkl, "rb"))
     vectorize_layer = tf.keras.layers.TextVectorization.from_config(vectorizer_dict['config'])
     vectorize_layer.set_weights(vectorizer_dict['weights'])
-
-    with open('data/emotion_encodings.pkl', 'rb') as file:
-        encodings = pickle.load(file)
-
-    if evaluate:
-        df = pd.read_pickle(train_pkl)
-    else:
-        df = pd.read_pickle(test_pkl)
 
     predictions = []
     for version in versions:
@@ -57,6 +86,21 @@ def predict(versions=(1,), batch_size=64, method="occur_max", evaluate=False):
         with open(f"{save_path}/predict.pkl", "wb") as file:
             pickle.dump(_prediction, file)
         predictions.append(_prediction)
+    return predictions
+
+
+def predict(versions=(1,), method="occur_max", bert=False):
+    test_pkl = f"data/test.pkl"
+
+    with open('data/emotion_encodings.pkl', 'rb') as file:
+        encodings = pickle.load(file)
+
+    df = pd.read_pickle(test_pkl)
+
+    if bert:
+        predictions = predict_bert(versions, 32)
+    else:
+        predictions = predict_cnn(df, versions, 128)
 
     print("Ensembling...")
     if len(versions) == 1:
@@ -102,7 +146,9 @@ def predict(versions=(1,), batch_size=64, method="occur_max", evaluate=False):
 
 
 def main():
-    predict(versions=(41, 42), batch_size=128, method="occur_max", evaluate=False)
+    # predict(versions=(41, 42), method="occur_max")
+    predict(versions=(44,), method="occur_max", bert=True)
+    predict(versions=(44, 45), method="occur_max", bert=True)
 
 
 if __name__ == "__main__":
