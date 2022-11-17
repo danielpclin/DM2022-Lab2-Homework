@@ -1,3 +1,4 @@
+import os
 import pickle
 
 from sklearn.model_selection import train_test_split
@@ -9,7 +10,6 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import xgboost as xgb
 
-# Setup mixed precision
 
 # tf.config.set_visible_devices([], 'GPU')
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
@@ -192,7 +192,8 @@ def train(version_num, batch_size=64):
     tf.keras.backend.clear_session()
 
 
-def train_xgboost():
+def train_xgboost(version_num):
+    tf.config.set_visible_devices([], 'GPU')
     train_pkl = f"data/train.pkl"
     vectorizer_pkl = f"data/vectorizer.pkl"
 
@@ -218,19 +219,75 @@ def train_xgboost():
         "num_class": 8,
     }
     num_trees = 300
-    gbm = xgb.train(params, xgb.DMatrix(train_x, train_y), num_trees)
+    bst = xgb.train(params, xgb.DMatrix(train_x, train_y), num_trees)
 
     print("Make predictions on the test set")
-    test_probs = gbm.predict(xgb.DMatrix(val_x))
-    print(f"Accuracy: {np.mean(test_probs.argmax(axis=1) == val_y)}")
+    train_acc = np.mean(bst.predict(xgb.DMatrix(train_x)).argmax(axis=1) == train_y)
+    val_acc = np.mean(bst.predict(xgb.DMatrix(val_x)).argmax(axis=1) == val_y)
+    print(f"Train Accuracy: {train_acc}")
+    print(f"Val Accuracy: {val_acc}")
+
+    os.makedirs(f'save/{version_num}', exist_ok=True)
+    with open(f"save/{version_num}/results.txt", "w") as file:
+        file.write("Train Accuracy:\n")
+        file.write(f"{train_acc}\n")
+        file.write("Val Accuracy:\n")
+        file.write(f"{val_acc}\n")
+
+    bst.save_model(f'save/{version_num}/xgboost.model')
+
+
+def train_distil_xgboost(version_num):
+    tf.config.set_visible_devices([], 'GPU')
+
+    print("Reading data")
+    pickle_input_path = './data/dbert_inputs.pkl'
+    pickle_mask_path = './data/dbert_mask.pkl'
+    pickle_label_path = './data/dbert_label.pkl'
+    input_ids = pickle.load(open(pickle_input_path, 'rb'))
+    attention_masks = pickle.load(open(pickle_mask_path, 'rb'))
+    labels = pickle.load(open(pickle_label_path, 'rb'))
+    labels = pd.get_dummies(labels).to_numpy().argmax(axis=1)
+
+    train_pkl = f"data/train.pkl"
+    train_df = pd.read_pickle(train_pkl)
+    print(f"{train_df.shape = }")
+
+    train_x, val_x, train_mask, val_mask, train_y, val_y = train_test_split(input_ids, attention_masks, labels, test_size=0.1)
+
+    params = {
+        "objective": "multi:softprob",
+        "eta": 0.3,
+        "max_depth": 6,
+        "min_child_weight": 1,
+        "verbosity": 1,
+        "num_class": 8,
+    }
+    num_trees = 300
+    bst = xgb.train(params, xgb.DMatrix(train_x, train_y), num_trees, evals=[(xgb.DMatrix(val_x, val_y), 'eval')])
+
+    print("Make predictions on the test set")
+    train_acc = np.mean(bst.predict(xgb.DMatrix(train_x)).argmax(axis=1) == train_y)
+    val_acc = np.mean(bst.predict(xgb.DMatrix(val_x)).argmax(axis=1) == val_y)
+    print(f"Train Accuracy: {train_acc}")
+    print(f"Val Accuracy: {val_acc}")
+
+    os.makedirs(f'save/{version_num}', exist_ok=True)
+    with open(f"save/{version_num}/results.txt", "w") as file:
+        file.write("Train Accuracy:\n")
+        file.write(f"{train_acc}\n")
+        file.write("Val Accuracy:\n")
+        file.write(f"{val_acc}\n")
+
+    bst.save_model(f'save/{version_num}/xgboost.model')
 
 
 def train_bert(version_num, batch_size=32):
     train_pkl = f"data/train.pkl"
-    pickle_inp_path = './data/dbert_inputs.pkl'
+    pickle_input_path = './data/dbert_inputs.pkl'
     pickle_mask_path = './data/dbert_mask.pkl'
     pickle_label_path = './data/dbert_label.pkl'
-    checkpoint_path = f'save/bert_{version_num}/checkpoint.tf'
+    checkpoint_path = f'save/bert_{version_num}/checkpoint.hdf5'
     log_dir = f'save/bert_{version_num}'
     epochs = 30
     max_len = 256
@@ -243,7 +300,7 @@ def train_bert(version_num, batch_size=32):
     num_classes = len(train_y.unique())
 
     print('Loading the saved pickle files..')
-    input_ids = pickle.load(open(pickle_inp_path, 'rb'))
+    input_ids = pickle.load(open(pickle_input_path, 'rb'))
     attention_masks = pickle.load(open(pickle_mask_path, 'rb'))
     labels = pickle.load(open(pickle_label_path, 'rb'))
     labels = pd.get_dummies(labels)
@@ -278,9 +335,9 @@ def train_bert(version_num, batch_size=32):
 
     checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True,
                                                     save_weights_only=False, mode='auto')
-    early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, verbose=1, mode='auto')
+    early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, verbose=1, mode='auto')
     tensor_board = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, cooldown=1,
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=1, cooldown=1,
                                                      mode='auto', min_lr=0.00001)
     callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr]
 
@@ -316,13 +373,14 @@ def main():
             version_num = int(file.readline())
     except (FileNotFoundError, ValueError):
         version_num = 0
-    # train(version_num=version_num, batch_size=128)
-    # train_xgboost()
-    train_bert(version_num=version_num, batch_size=32)
     with open('save/run.txt', 'w') as file:
         file.write(f"{version_num+1}\n")
+    # train(version_num=version_num, batch_size=128)
+    # train_xgboost(version_num)
+    train_distil_xgboost(version_num)
+    # train_bert(version_num=version_num, batch_size=32)
 
 
 if __name__ == "__main__":
-    for _ in range(2):
-        main()
+    # for _ in range(2):
+    main()

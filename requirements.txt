@@ -24,6 +24,7 @@ docker-pycreds==0.4.0
 entrypoints==0.4
 executing==1.2.0
 fastjsonschema==2.16.2
+filelock==3.8.0
 flatbuffers==22.10.26
 fonttools==4.38.0
 gast==0.4.0
@@ -36,6 +37,7 @@ google-pasta==0.2.0
 grpcio==1.50.0
 h5py==3.7.0
 htmlmin==0.1.12
+huggingface-hub==0.11.0
 idna==3.4
 ImageHash==4.3.1
 importlib-metadata==5.0.0
@@ -145,9 +147,11 @@ termcolor==2.1.0
 terminado==0.17.0
 threadpoolctl==3.1.0
 tinycss2==1.2.1
+tokenizers==0.13.2
 tornado==6.2
 tqdm==4.64.1
 traitlets==5.5.0
+transformers==4.24.0
 typing_extensions==4.4.0
 urllib3==1.26.12
 visions==0.7.5
@@ -158,4 +162,5 @@ websocket-client==1.4.2
 Werkzeug==2.2.2
 widgetsnbextension==4.0.3
 wrapt==1.14.1
+xgboost==1.7.1
 zipp==3.10.0

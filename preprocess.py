@@ -1,11 +1,12 @@
 import json
-import os
 import pickle
 
 import pandas as pd
 import tensorflow as tf
 import numpy as np
 from transformers import DistilBertTokenizer
+
+tf.config.set_visible_devices([], 'GPU')
 
 
 def preprocess():
@@ -135,7 +136,6 @@ def dbert_tokenize():
 
     pickle.dump(test_inputs, open(pickle_test_input_path, 'wb'))
     pickle.dump(test_mask, open(pickle_test_mask_path, 'wb'))
-
 
 
 if __name__ == "__main__":

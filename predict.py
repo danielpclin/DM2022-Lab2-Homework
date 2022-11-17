@@ -3,6 +3,8 @@ import pickle
 import pandas as pd
 import tensorflow as tf
 import numpy as np
+from transformers import TFDistilBertModel
+
 
 # tf.config.set_visible_devices([], 'GPU')
 
@@ -37,7 +39,7 @@ def predict(version_num=1):
 
 def predict_bert(version_num=1):
     save_path = f'save/bert_{version_num}'
-    checkpoint_path = f'{save_path}/checkpoint.tf'
+    checkpoint_path = f'{save_path}/checkpoint.hdf5'
     pickle_input_path = './data/dbert_test_inputs.pkl'
     pickle_mask_path = './data/dbert_test_mask.pkl'
 
@@ -49,7 +51,7 @@ def predict_bert(version_num=1):
     test_df = pd.read_pickle(test_pkl)
     print(f"{test_df.shape = }")
 
-    model = tf.keras.models.load_model(checkpoint_path)
+    model = tf.keras.models.load_model(checkpoint_path, custom_objects={"TFDistilBertModel": TFDistilBertModel})
     model.summary()
 
     print('Loading the saved pickle files..')
