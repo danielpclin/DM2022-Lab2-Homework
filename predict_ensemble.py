@@ -5,6 +5,7 @@ import tensorflow as tf
 import numpy as np
 from functools import reduce
 
+from transformers import TFDistilBertModel
 
 # Setup mixed precision
 # tf.config.set_visible_devices([], 'GPU')
@@ -26,7 +27,7 @@ def predict_bert(versions=(1,), batch_size=32):
     predictions = []
     for version in versions:
         print(f"Predicting bert {version}...")
-        save_path = f'save/bert_{version}'
+        save_path = f'save/{version}_bert'
         try:
             with open(f"{save_path}/predict.pkl", "rb") as file:
                 print(f"file found, skipping...")
@@ -37,8 +38,8 @@ def predict_bert(versions=(1,), batch_size=32):
         else:
             continue
         print(f"file not found, predicting with model...")
-        checkpoint_path = f'{save_path}/checkpoint.tf'
-        model = tf.keras.models.load_model(checkpoint_path)
+        checkpoint_path = f'{save_path}/checkpoint.hdf5'
+        model = tf.keras.models.load_model(checkpoint_path, custom_objects={"TFDistilBertModel": TFDistilBertModel})
 
         _prediction = model.predict([test_inputs, test_mask], batch_size=batch_size)
         tf.keras.backend.clear_session()
@@ -86,7 +87,7 @@ def predict_cnn(df, versions=(1,), batch_size=64):
     return predictions
 
 
-def predict(versions=(1,), method="occur_max", bert=False):
+def predict(versions=None, bert_versions=None, method="occur_max"):
     test_pkl = f"data/test.pkl"
 
     with open('data/emotion_encodings.pkl', 'rb') as file:
@@ -94,13 +95,14 @@ def predict(versions=(1,), method="occur_max", bert=False):
 
     df = pd.read_pickle(test_pkl)
 
-    if bert:
-        predictions = predict_bert(versions, 32)
-    else:
-        predictions = predict_cnn(df, versions, 128)
+    predictions = []
+    if versions is not None:
+        predictions += predict_cnn(df, versions, 128)
+    if bert_versions is not None:
+        predictions += predict_bert(bert_versions, 32)
 
     print("Ensembling...")
-    if len(versions) == 1:
+    if len(predictions) == 1:
         prediction = np.argmax(predictions[0], axis=1)
         df['emotion'] = prediction
         df['emotion'] = df['emotion'].apply(lambda x: encodings[x])
@@ -134,18 +136,24 @@ def predict(versions=(1,), method="occur_max", bert=False):
         df.reset_index(inplace=True)
         df['emotion'] = result
 
-    if len(versions) == 1:
-        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"bert_" if bert else ""}{versions[0]}/prediction.csv',
+    if len(predictions) == 1:
+        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{f"{versions[0]}" if bert_versions is None else f"{bert_versions[0]}_bert"}/prediction.csv',
                                                      index=False, columns=['id', 'emotion'])
     else:
-        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"bert_" if bert else ""}{"_".join(map(str, versions))}_{method}_prediction.csv',
+        all_versions = tuple()
+        if versions is not None:
+            all_versions += versions
+        if bert_versions is not None:
+            all_versions += bert_versions
+        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"_".join(map(str, all_versions))}_{method}_prediction.csv',
                                                      index=False, columns=['id', 'emotion'])
 
 
 def main():
     # predict(versions=(41, 42), method="occur_max")
-    predict(versions=(44,), method="occur_max", bert=True)
-    predict(versions=(44, 45), method="occur_max", bert=True)
+    predict(versions=(41, 42), bert_versions=(44, 45), method="occur_max")
+    # predict(bert_versions=(44,), method="occur_max")
+    # predict(bert_versions=(44, 45), method="occur_max")
 
 
 if __name__ == "__main__":

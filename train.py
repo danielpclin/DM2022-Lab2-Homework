@@ -135,24 +135,18 @@ def train(version_num, batch_size=64):
 
     input_shape = (vectorize_layer.get_config()['output_sequence_length'], )
     main_input = tf.keras.layers.Input(shape=input_shape)
-    x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim)(main_input)
+    x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim, mask_zero=True)(main_input)
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, dropout=0.3, kernel_regularizer=tf.keras.regularizers.l2(0.01)))(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.MaxPooling1D()(x)
-    x = tf.keras.layers.Dropout(0.2)(x)
-    x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.Conv1D(512, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Flatten()(x)
-    out = tf.keras.layers.Dense(8, activation="softmax", name="predictions")(x)
+    out = tf.keras.layers.Dense(8, activation="softmax", name="predictions", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
 
     model = tf.keras.Model(main_input, out)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
@@ -238,14 +232,10 @@ def train_xgboost(version_num):
 
 
 def train_distil_xgboost(version_num):
-    tf.config.set_visible_devices([], 'GPU')
-
     print("Reading data")
     pickle_input_path = './data/dbert_inputs.pkl'
-    pickle_mask_path = './data/dbert_mask.pkl'
     pickle_label_path = './data/dbert_label.pkl'
     input_ids = pickle.load(open(pickle_input_path, 'rb'))
-    attention_masks = pickle.load(open(pickle_mask_path, 'rb'))
     labels = pickle.load(open(pickle_label_path, 'rb'))
     labels = pd.get_dummies(labels).to_numpy().argmax(axis=1)
 
@@ -253,7 +243,7 @@ def train_distil_xgboost(version_num):
     train_df = pd.read_pickle(train_pkl)
     print(f"{train_df.shape = }")
 
-    train_x, val_x, train_mask, val_mask, train_y, val_y = train_test_split(input_ids, attention_masks, labels, test_size=0.1)
+    train_x, val_x, train_y, val_y = train_test_split(input_ids, labels, test_size=0.1)
 
     params = {
         "objective": "multi:softprob",
@@ -263,12 +253,15 @@ def train_distil_xgboost(version_num):
         "verbosity": 1,
         "num_class": 8,
     }
-    num_trees = 300
-    bst = xgb.train(params, xgb.DMatrix(train_x, train_y), num_trees, evals=[(xgb.DMatrix(val_x, val_y), 'eval')])
+    num_trees = 600
+    train_dmatrix = xgb.DMatrix(train_x, train_y)
+    val_dmatrix = xgb.DMatrix(val_x, val_y)
+    bst = xgb.train(params, train_dmatrix, num_trees,
+                    evals=[(val_dmatrix, 'eval')], early_stopping_rounds=10)
 
     print("Make predictions on the test set")
-    train_acc = np.mean(bst.predict(xgb.DMatrix(train_x)).argmax(axis=1) == train_y)
-    val_acc = np.mean(bst.predict(xgb.DMatrix(val_x)).argmax(axis=1) == val_y)
+    train_acc = np.mean(bst.predict(xgb.DMatrix(train_x), iteration_range=(0, bst.best_iteration + 1)).argmax(axis=1) == train_y)
+    val_acc = np.mean(bst.predict(xgb.DMatrix(val_x), iteration_range=(0, bst.best_iteration + 1)).argmax(axis=1) == val_y)
     print(f"Train Accuracy: {train_acc}")
     print(f"Val Accuracy: {val_acc}")
 
@@ -287,8 +280,8 @@ def train_bert(version_num, batch_size=32):
     pickle_input_path = './data/dbert_inputs.pkl'
     pickle_mask_path = './data/dbert_mask.pkl'
     pickle_label_path = './data/dbert_label.pkl'
-    checkpoint_path = f'save/bert_{version_num}/checkpoint.hdf5'
-    log_dir = f'save/bert_{version_num}'
+    checkpoint_path = f'save/{version_num}_bert/checkpoint.hdf5'
+    log_dir = f'save/{version_num}_bert'
     epochs = 30
     max_len = 256
 
@@ -322,7 +315,7 @@ def train_bert(version_num, batch_size=32):
     inputs = tf.keras.layers.Input(shape=(max_len,), dtype='int64')
     masks = tf.keras.layers.Input(shape=(max_len,), dtype='int64')
     dbert_layer = dbert_model(inputs, attention_mask=masks)[0][:, 0, :]
-    dense = tf.keras.layers.Dense(256, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01))(dbert_layer)
+    dense = tf.keras.layers.Dense(512, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01))(dbert_layer)
     dropout = tf.keras.layers.Dropout(0.5)(dense)
     pred = tf.keras.layers.Dense(num_classes, activation='softmax', kernel_regularizer=tf.keras.regularizers.l2(0.01))(dropout)
     model = tf.keras.Model(inputs=[inputs, masks], outputs=pred)
@@ -353,9 +346,9 @@ def train_bert(version_num, batch_size=32):
     except KeyboardInterrupt:
         pass
     else:
-        with open(f"save/{version_num}/result.pkl", "wb") as file:
+        with open(f"save/{version_num}_bert/result.pkl", "wb") as file:
             pickle.dump(train_history.history, file)
-        with open(f"save/{version_num}/results.txt", "w") as file:
+        with open(f"save/{version_num}_bert/results.txt", "w") as file:
             loss_idx = np.nanargmin(train_history.history['val_loss'])
             file.write("Loss:\n")
             file.write(f"{train_history.history['val_loss'][loss_idx]}\n")
@@ -377,10 +370,10 @@ def main():
         file.write(f"{version_num+1}\n")
     # train(version_num=version_num, batch_size=128)
     # train_xgboost(version_num)
-    train_distil_xgboost(version_num)
-    # train_bert(version_num=version_num, batch_size=32)
+    # train_distil_xgboost(version_num)
+    train_bert(version_num=version_num, batch_size=32)
 
 
 if __name__ == "__main__":
-    # for _ in range(2):
-    main()
+    for _ in range(2):
+        main()

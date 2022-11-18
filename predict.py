@@ -38,7 +38,7 @@ def predict(version_num=1):
 
 
 def predict_bert(version_num=1):
-    save_path = f'save/bert_{version_num}'
+    save_path = f'save/{version_num}_bert'
     checkpoint_path = f'{save_path}/checkpoint.hdf5'
     pickle_input_path = './data/dbert_test_inputs.pkl'
     pickle_mask_path = './data/dbert_test_mask.pkl'
