@@ -5,14 +5,14 @@ import tensorflow as tf
 import numpy as np
 from functools import reduce
 
-from transformers import TFDistilBertModel
+from transformers import TFDistilBertModel, TFRobertaModel
 
 # Setup mixed precision
 # tf.config.set_visible_devices([], 'GPU')
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
 
-def predict_bert(versions=(1,), batch_size=32):
+def predict_dbert(versions=(1,), batch_size=32):
     print('Preparing the pickle file.....')
     pickle_input_path = './data/dbert_test_inputs.pkl'
     pickle_mask_path = './data/dbert_test_mask.pkl'
@@ -42,6 +42,43 @@ def predict_bert(versions=(1,), batch_size=32):
         model = tf.keras.models.load_model(checkpoint_path, custom_objects={"TFDistilBertModel": TFDistilBertModel})
 
         _prediction = model.predict([test_inputs, test_mask], batch_size=batch_size)
+        tf.keras.backend.clear_session()
+        with open(f"{save_path}/predict.pkl", "wb") as file:
+            pickle.dump(_prediction, file)
+        predictions.append(_prediction)
+    return predictions
+
+def predict_roberta(versions=(1,), batch_size=32):
+    print('Preparing the pickle file.....')
+    name = 'roberta'
+    pickle_input_path = f'./data/{name}_test_inputs.pkl'
+    pickle_mask_path = f'./data/{name}_test_mask.pkl'
+
+    print('Loading the saved pickle files..')
+    test_inputs = pickle.load(open(pickle_input_path, 'rb'))
+    test_mask = pickle.load(open(pickle_mask_path, 'rb'))
+
+    print(f'Test input shape {test_inputs.shape}')
+    print(f"Test attention mask shape {test_mask.shape}")
+
+    predictions = []
+    for version in versions:
+        print(f"Predicting roberta {version}...")
+        save_path = f'save/{version}_{name}'
+        try:
+            with open(f"{save_path}/predict.pkl", "rb") as file:
+                print(f"file found, skipping...")
+                _prediction = pickle.load(file)
+                predictions.append(_prediction)
+        except FileNotFoundError:
+            pass
+        else:
+            continue
+        print(f"file not found, predicting with model...")
+        checkpoint_path = f'{save_path}/checkpoint.hdf5'
+        model = tf.keras.models.load_model(checkpoint_path, custom_objects={"TFRobertaModel": TFRobertaModel})
+
+        _prediction = model.predict([test_inputs, test_mask], batch_size=batch_size, verbose=1)
         tf.keras.backend.clear_session()
         with open(f"{save_path}/predict.pkl", "wb") as file:
             pickle.dump(_prediction, file)
@@ -87,7 +124,7 @@ def predict_cnn(df, versions=(1,), batch_size=64):
     return predictions
 
 
-def predict(versions=None, bert_versions=None, method="occur_max"):
+def predict(versions=None, bert_versions=None, roberta_versions=None, method="occur_max"):
     test_pkl = f"data/test.pkl"
 
     with open('data/emotion_encodings.pkl', 'rb') as file:
@@ -99,7 +136,9 @@ def predict(versions=None, bert_versions=None, method="occur_max"):
     if versions is not None:
         predictions += predict_cnn(df, versions, 128)
     if bert_versions is not None:
-        predictions += predict_bert(bert_versions, 32)
+        predictions += predict_dbert(bert_versions, 32)
+    if roberta_versions is not None:
+        predictions += predict_roberta(roberta_versions, 16)
 
     print("Ensembling...")
     if len(predictions) == 1:
@@ -137,23 +176,27 @@ def predict(versions=None, bert_versions=None, method="occur_max"):
         df['emotion'] = result
 
     if len(predictions) == 1:
-        df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{f"{versions[0]}" if bert_versions is None else f"{bert_versions[0]}_bert"}/prediction.csv',
-                                                     index=False, columns=['id', 'emotion'])
+        if versions is not None:
+            df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{f"{versions[0]}"}/prediction.csv', index=False, columns=['id', 'emotion'])
+        if bert_versions is not None:
+            df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{f"{bert_versions[0]}_bert"}/prediction.csv', index=False, columns=['id', 'emotion'])
+        if roberta_versions is not None:
+            df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{f"{roberta_versions[0]}_roberta"}/prediction.csv', index=False, columns=['id', 'emotion'])
     else:
         all_versions = tuple()
         if versions is not None:
             all_versions += versions
         if bert_versions is not None:
             all_versions += bert_versions
+        if roberta_versions is not None:
+            all_versions += roberta_versions
         df.rename(columns={'tweet_id': 'id'}).to_csv(f'save/{"_".join(map(str, all_versions))}_{method}_prediction.csv',
                                                      index=False, columns=['id', 'emotion'])
 
 
 def main():
-    # predict(versions=(41, 42), method="occur_max")
-    predict(versions=(41, 42), bert_versions=(44, 45), method="occur_max")
-    # predict(bert_versions=(44,), method="occur_max")
-    # predict(bert_versions=(44, 45), method="occur_max")
+    # predict(versions=(57,), bert_versions=(44, 45, 58), roberta_versions=(60,), method="occur_max")
+    predict(bert_versions=(44, 45, 58), roberta_versions=(60,), method="occur_max")
 
 
 if __name__ == "__main__":

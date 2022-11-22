@@ -4,7 +4,7 @@ import pickle
 import pandas as pd
 import tensorflow as tf
 import numpy as np
-from transformers import DistilBertTokenizer
+from transformers import DistilBertTokenizer, RobertaTokenizer, AutoTokenizer
 
 tf.config.set_visible_devices([], 'GPU')
 
@@ -79,11 +79,12 @@ def adapt():
 
 
 def dbert_tokenize():
-    pickle_input_path = './data/dbert_inputs.pkl'
-    pickle_mask_path = './data/dbert_mask.pkl'
-    pickle_label_path = './data/dbert_label.pkl'
-    pickle_test_input_path = './data/dbert_test_inputs.pkl'
-    pickle_test_mask_path = './data/dbert_test_mask.pkl'
+    name = "dbert"
+    pickle_input_path = f'./data/{name}_inputs.pkl'
+    pickle_mask_path = f'./data/{name}_mask.pkl'
+    pickle_label_path = f'./data/{name}_label.pkl'
+    pickle_test_input_path = f'./data/{name}_test_inputs.pkl'
+    pickle_test_mask_path = f'./data/{name}_test_mask.pkl'
     train_pkl = f"data/train.pkl"
     test_pkl = f"data/test.pkl"
     max_len = 256
@@ -96,7 +97,7 @@ def dbert_tokenize():
 
     train_x = train_df['text']
     train_y = train_df['emotion']
-    dbert_tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
+    dbert_tokenizer = AutoTokenizer.from_pretrained('distilbert-base-uncased')
 
     # Encode train set
     print('Preparing the pickle file.....')
@@ -104,10 +105,10 @@ def dbert_tokenize():
     attention_masks = []
 
     for sent in train_x:
-        dbert_inputs = dbert_tokenizer.encode_plus(sent, add_special_tokens=True, max_length=max_len,
+        bert_inputs = dbert_tokenizer.encode_plus(sent, add_special_tokens=True, max_length=max_len,
                                                    padding='max_length', return_attention_mask=True, truncation=True)
-        input_ids.append(dbert_inputs['input_ids'])
-        attention_masks.append(dbert_inputs['attention_mask'])
+        input_ids.append(bert_inputs['input_ids'])
+        attention_masks.append(bert_inputs['attention_mask'])
 
     input_ids = np.asarray(input_ids)
     attention_masks = np.array(attention_masks)
@@ -126,10 +127,71 @@ def dbert_tokenize():
     test_mask = []
 
     for sent in test_x:
-        dbert_inputs = dbert_tokenizer.encode_plus(sent, add_special_tokens=True, max_length=max_len,
+        bert_inputs = dbert_tokenizer.encode_plus(sent, add_special_tokens=True, max_length=max_len,
                                                    padding='max_length', return_attention_mask=True, truncation=True)
-        test_inputs.append(dbert_inputs['input_ids'])
-        test_mask.append(dbert_inputs['attention_mask'])
+        test_inputs.append(bert_inputs['input_ids'])
+        test_mask.append(bert_inputs['attention_mask'])
+
+    test_inputs = np.asarray(test_inputs)
+    test_mask = np.array(test_mask)
+
+    pickle.dump(test_inputs, open(pickle_test_input_path, 'wb'))
+    pickle.dump(test_mask, open(pickle_test_mask_path, 'wb'))
+
+
+def roberta_tokenize():
+    name = "roberta"
+    pickle_input_path = f'./data/{name}_inputs.pkl'
+    pickle_mask_path = f'./data/{name}_mask.pkl'
+    pickle_label_path = f'./data/{name}_label.pkl'
+    pickle_test_input_path = f'./data/{name}_test_inputs.pkl'
+    pickle_test_mask_path = f'./data/{name}_test_mask.pkl'
+    train_pkl = f"data/train.pkl"
+    test_pkl = f"data/test.pkl"
+    max_len = 256
+
+    print("Reading data")
+    train_df = pd.read_pickle(train_pkl)
+    print(f"{train_df.shape = }")
+    test_df = pd.read_pickle(test_pkl)
+    print(f"{test_df.shape = }")
+
+    train_x = train_df['text']
+    train_y = train_df['emotion']
+    dbert_tokenizer = AutoTokenizer.from_pretrained('roberta-base')
+
+    # Encode train set
+    print('Preparing the pickle file.....')
+    input_ids = []
+    attention_masks = []
+
+    for sent in train_x:
+        bert_inputs = dbert_tokenizer.encode_plus(sent, add_special_tokens=True, max_length=max_len,
+                                                   padding='max_length', return_attention_mask=True, truncation=True)
+        input_ids.append(bert_inputs['input_ids'])
+        attention_masks.append(bert_inputs['attention_mask'])
+
+    input_ids = np.asarray(input_ids)
+    attention_masks = np.array(attention_masks)
+    labels = np.array(train_y)
+
+    pickle.dump(input_ids, open(pickle_input_path, 'wb'))
+    pickle.dump(attention_masks, open(pickle_mask_path, 'wb'))
+    pickle.dump(labels, open(pickle_label_path, 'wb'))
+
+    print('Pickle files saved as ', pickle_input_path, pickle_mask_path, pickle_label_path)
+
+    # Encode test set
+    test_x = test_df['text']
+
+    test_inputs = []
+    test_mask = []
+
+    for sent in test_x:
+        bert_inputs = dbert_tokenizer.encode_plus(sent, add_special_tokens=True, max_length=max_len,
+                                                   padding='max_length', return_attention_mask=True, truncation=True)
+        test_inputs.append(bert_inputs['input_ids'])
+        test_mask.append(bert_inputs['attention_mask'])
 
     test_inputs = np.asarray(test_inputs)
     test_mask = np.array(test_mask)
@@ -139,7 +201,8 @@ def dbert_tokenize():
 
 
 if __name__ == "__main__":
-    preprocess()
-    adapt()
-    dbert_tokenize()
+    # preprocess()
+    # adapt()
+    # dbert_tokenize()
+    roberta_tokenize()
     pass

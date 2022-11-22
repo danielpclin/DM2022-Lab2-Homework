@@ -69,9 +69,43 @@ def predict_bert(version_num=1):
     test_df.rename(columns={'tweet_id': 'id'}).to_csv(f'{save_path}/prediction.csv', index=False, columns=['id', 'emotion'])
 
 
+def predict_roberta(version_num=1):
+    name = 'roberta'
+    save_path = f'save/{version_num}_{name}'
+    checkpoint_path = f'{save_path}/checkpoint.hdf5'
+    pickle_input_path = f'./data/{name}_test_inputs.pkl'
+    pickle_mask_path = f'./data/{name}_test_mask.pkl'
+
+    with open('data/emotion_encodings.pkl', 'rb') as file:
+        encodings = pickle.load(file)
+
+    test_pkl = f"data/test.pkl"
+    print("Reading data")
+    test_df = pd.read_pickle(test_pkl)
+    print(f"{test_df.shape = }")
+
+    model = tf.keras.models.load_model(checkpoint_path, custom_objects={"TFRobertaModel": TFRobertaModel})
+    model.summary()
+
+    print('Loading the saved pickle files..')
+    test_inputs = pickle.load(open(pickle_input_path, 'rb'))
+    test_mask = pickle.load(open(pickle_mask_path, 'rb'))
+
+    print(f'Test input shape {test_inputs.shape}')
+    print(f"Test attention mask shape {test_mask.shape}")
+
+    pred = model.predict([test_inputs, test_mask])
+
+    pred = np.argmax(pred, axis=1)
+    test_df['emotion'] = pred
+    test_df['emotion'] = test_df['emotion'].apply(lambda x: encodings[x])
+    test_df.rename(columns={'tweet_id': 'id'}).to_csv(f'{save_path}/prediction.csv', index=False, columns=['id', 'emotion'])
+
+
 def main():
     # predict(20)
-    predict_bert()
+    # predict_bert(40)
+    predict_roberta(60)
 
 
 if __name__ == "__main__":

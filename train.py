@@ -2,7 +2,7 @@ import os
 import pickle
 
 from sklearn.model_selection import train_test_split
-from transformers import TFDistilBertModel
+from transformers import TFDistilBertModel, TFRobertaModel, TFAutoModel
 
 import pandas as pd
 import numpy as np
@@ -52,7 +52,7 @@ class MinimumEpochReduceLROnPlateau(tf.keras.callbacks.ReduceLROnPlateau):
             super().on_epoch_end(epoch, logs)
 
 
-def plot(history, version_num):
+def plot(history, name):
     fig = plt.figure(figsize=(20, 15))
 
     # Plot training accuracy
@@ -78,7 +78,7 @@ def plot(history, version_num):
     plt.yscale("log")
     plt.grid()
     plt.tight_layout()
-    plt.savefig(f"save/{version_num}/train.png")
+    plt.savefig(f"save/{name}/train.png")
     plt.close(fig)
 
     fig = plt.figure(figsize=(20, 15))
@@ -106,7 +106,7 @@ def plot(history, version_num):
     plt.yscale("log")
     plt.grid()
     plt.tight_layout()
-    plt.savefig(f"save/{version_num}/validation.png")
+    plt.savefig(f"save/{name}/validation.png")
     plt.close(fig)
 
 
@@ -136,13 +136,9 @@ def train(version_num, batch_size=64):
     input_shape = (vectorize_layer.get_config()['output_sequence_length'], )
     main_input = tf.keras.layers.Input(shape=input_shape)
     x = tf.keras.layers.Embedding(vectorize_layer.get_config()['max_tokens'], embedding_dim, mask_zero=True)(main_input)
-    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, dropout=0.3, kernel_regularizer=tf.keras.regularizers.l2(0.01)))(x)
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, dropout=0.3, return_sequences=True))(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.Conv1D(128, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.MaxPooling1D()(x)
-    x = tf.keras.layers.Dropout(0.2)(x)
-    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
-    x = tf.keras.layers.Conv1D(256, 3, padding="valid", activation="relu", strides=1)(x)
     x = tf.keras.layers.MaxPooling1D()(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Flatten()(x)
@@ -181,8 +177,6 @@ def train(version_num, batch_size=64):
             file.write("Accuracy:\n")
             file.write(f"{train_history.history['val_accuracy'][loss_idx]}\n")
         plot(train_history.history, version_num)
-    finally:
-        pass
     tf.keras.backend.clear_session()
 
 
@@ -215,7 +209,7 @@ def train_xgboost(version_num):
     num_trees = 300
     bst = xgb.train(params, xgb.DMatrix(train_x, train_y), num_trees)
 
-    print("Make predictions on the test set")
+    print("Make predictions on the train and val set")
     train_acc = np.mean(bst.predict(xgb.DMatrix(train_x)).argmax(axis=1) == train_y)
     val_acc = np.mean(bst.predict(xgb.DMatrix(val_x)).argmax(axis=1) == val_y)
     print(f"Train Accuracy: {train_acc}")
@@ -252,14 +246,15 @@ def train_distil_xgboost(version_num):
         "min_child_weight": 1,
         "verbosity": 1,
         "num_class": 8,
+        'eval_metric': 'merror'
     }
-    num_trees = 600
+    num_trees = 1000
     train_dmatrix = xgb.DMatrix(train_x, train_y)
     val_dmatrix = xgb.DMatrix(val_x, val_y)
     bst = xgb.train(params, train_dmatrix, num_trees,
-                    evals=[(val_dmatrix, 'eval')], early_stopping_rounds=10)
+                    evals=[(train_dmatrix, 'train'), (val_dmatrix, 'eval')], early_stopping_rounds=10)
 
-    print("Make predictions on the test set")
+    print("Make predictions on the train and val set")
     train_acc = np.mean(bst.predict(xgb.DMatrix(train_x), iteration_range=(0, bst.best_iteration + 1)).argmax(axis=1) == train_y)
     val_acc = np.mean(bst.predict(xgb.DMatrix(val_x), iteration_range=(0, bst.best_iteration + 1)).argmax(axis=1) == val_y)
     print(f"Train Accuracy: {train_acc}")
@@ -275,13 +270,14 @@ def train_distil_xgboost(version_num):
     bst.save_model(f'save/{version_num}/xgboost.model')
 
 
-def train_bert(version_num, batch_size=32):
+def train_distilbert(version_num, batch_size=32):
     train_pkl = f"data/train.pkl"
-    pickle_input_path = './data/dbert_inputs.pkl'
-    pickle_mask_path = './data/dbert_mask.pkl'
-    pickle_label_path = './data/dbert_label.pkl'
-    checkpoint_path = f'save/{version_num}_bert/checkpoint.hdf5'
-    log_dir = f'save/{version_num}_bert'
+    name = 'dbert'
+    pickle_input_path = f'./data/{name}_inputs.pkl'
+    pickle_mask_path = f'./data/{name}_mask.pkl'
+    pickle_label_path = f'./data/{name}_label.pkl'
+    checkpoint_path = f'save/{version_num}_{name}/checkpoint.hdf5'
+    log_dir = f'save/{version_num}_{name}'
     epochs = 30
     max_len = 256
 
@@ -346,21 +342,103 @@ def train_bert(version_num, batch_size=32):
     except KeyboardInterrupt:
         pass
     else:
-        with open(f"save/{version_num}_bert/result.pkl", "wb") as file:
+        with open(f"save/{version_num}_{name}/result.pkl", "wb") as file:
             pickle.dump(train_history.history, file)
-        with open(f"save/{version_num}_bert/results.txt", "w") as file:
+        with open(f"save/{version_num}_{name}/results.txt", "w") as file:
             loss_idx = np.nanargmin(train_history.history['val_loss'])
             file.write("Loss:\n")
             file.write(f"{train_history.history['val_loss'][loss_idx]}\n")
             file.write("Accuracy:\n")
             file.write(f"{train_history.history['val_accuracy'][loss_idx]}\n")
-        plot(train_history.history, version_num)
-    finally:
-        pass
+        plot(train_history.history, f"save/{version_num}_{name}")
     tf.keras.backend.clear_session()
 
 
-def main():
+def train_roberta(version_num, batch_size=32):
+    train_pkl = f"data/train.pkl"
+    name = 'roberta'
+    pickle_input_path = f'./data/{name}_inputs.pkl'
+    pickle_mask_path = f'./data/{name}_mask.pkl'
+    pickle_label_path = f'./data/{name}_label.pkl'
+    checkpoint_path = f'save/{version_num}_{name}/checkpoint.hdf5'
+    log_dir = f'save/{version_num}_{name}'
+    epochs = 30
+    max_len = 256
+
+    print("Reading data")
+    train_df = pd.read_pickle(train_pkl)
+    print(f"{train_df.shape = }")
+
+    train_y = train_df['emotion']
+    num_classes = len(train_y.unique())
+
+    print('Loading the saved pickle files..')
+    input_ids = pickle.load(open(pickle_input_path, 'rb'))
+    attention_masks = pickle.load(open(pickle_mask_path, 'rb'))
+    labels = pickle.load(open(pickle_label_path, 'rb'))
+    labels = pd.get_dummies(labels)
+
+    print(f'Input shape {input_ids.shape}')
+    print(f'Attention mask shape {attention_masks.shape}')
+    print(f'Input label shape {labels.shape}')
+    train_inputs, val_inputs, train_label, val_label, train_mask, val_mask = train_test_split(input_ids, labels,
+                                                                                              attention_masks,
+                                                                                              test_size=0.1)
+
+    print(f'Train inp shape {train_inputs.shape} Val input shape {val_inputs.shape}')
+    print(f"Train label shape {train_label.shape} Val label shape {val_label.shape}")
+    print(f"Train attention mask shape {train_mask.shape} Val attention mask shape {val_mask.shape}")
+
+    # Setup model
+    bert_model = TFAutoModel.from_pretrained('roberta-base')
+
+    inputs = tf.keras.layers.Input(shape=(max_len,), dtype='int64')
+    masks = tf.keras.layers.Input(shape=(max_len,), dtype='int64')
+    bert_layer = bert_model(inputs, attention_mask=masks)[0][:, 0, :]
+    dense = tf.keras.layers.Dense(512, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01))(bert_layer)
+    dropout = tf.keras.layers.Dropout(0.5)(dense)
+    pred = tf.keras.layers.Dense(num_classes, activation='softmax', kernel_regularizer=tf.keras.regularizers.l2(0.01))(dropout)
+    model = tf.keras.Model(inputs=[inputs, masks], outputs=pred)
+
+    loss = tf.keras.losses.CategoricalCrossentropy()
+    metric = tf.keras.metrics.CategoricalAccuracy('accuracy')
+    optimizer = tf.keras.optimizers.Adam(learning_rate=3e-5)
+    model.compile(loss=loss, optimizer=optimizer, metrics=[metric])
+    model.summary()
+
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True,
+                                                    save_weights_only=False, mode='auto')
+    early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, verbose=1, mode='auto')
+    tensor_board = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=1, cooldown=1,
+                                                     mode='auto', min_lr=0.00001)
+    callbacks_list = [checkpoint, tensor_board, early_stop, reduce_lr]
+
+    try:
+        train_history = model.fit(
+            [train_inputs, train_mask], train_label,
+            steps_per_epoch=np.ceil(train_inputs.shape[0] / batch_size),
+            epochs=epochs,
+            validation_data=([val_inputs, val_mask], val_label),
+            verbose=1,
+            callbacks=callbacks_list
+        )
+    except KeyboardInterrupt:
+        pass
+    else:
+        with open(f"save/{version_num}_{name}/result.pkl", "wb") as file:
+            pickle.dump(train_history.history, file)
+        with open(f"save/{version_num}_{name}/results.txt", "w") as file:
+            loss_idx = np.nanargmin(train_history.history['val_loss'])
+            file.write("Loss:\n")
+            file.write(f"{train_history.history['val_loss'][loss_idx]}\n")
+            file.write("Accuracy:\n")
+            file.write(f"{train_history.history['val_accuracy'][loss_idx]}\n")
+        plot(train_history.history, f"save/{version_num}_{name}")
+    tf.keras.backend.clear_session()
+
+
+def get_version_num():
     try:
         with open('save/run.txt') as file:
             version_num = int(file.readline())
@@ -368,12 +446,21 @@ def main():
         version_num = 0
     with open('save/run.txt', 'w') as file:
         file.write(f"{version_num+1}\n")
+    return version_num
+
+
+def main():
+    # version_num = get_version_num()
     # train(version_num=version_num, batch_size=128)
+    # version_num = get_version_num()
     # train_xgboost(version_num)
+    # version_num = get_version_num()
     # train_distil_xgboost(version_num)
-    train_bert(version_num=version_num, batch_size=32)
+    # version_num = get_version_num()
+    # train_distilbert(version_num=version_num, batch_size=32)
+    version_num = get_version_num()
+    train_roberta(version_num=version_num, batch_size=16)
 
 
 if __name__ == "__main__":
-    for _ in range(2):
-        main()
+    main()
