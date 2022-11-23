@@ -7,7 +7,7 @@
       <excludeFolder url="file://$MODULE_DIR$/data" />
       <excludeFolder url="file://$MODULE_DIR$/wandb" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.9 (DM2022-Lab2-Homework)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.10 (DM2022-Lab2-Homework)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
