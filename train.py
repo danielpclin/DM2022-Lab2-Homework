@@ -458,8 +458,9 @@ def main():
     # train_distil_xgboost(version_num)
     # version_num = get_version_num()
     # train_distilbert(version_num=version_num, batch_size=32)
-    version_num = get_version_num()
-    train_roberta(version_num=version_num, batch_size=16)
+    # version_num = get_version_num()
+    # train_roberta(version_num=version_num, batch_size=16)
+    pass
 
 
 if __name__ == "__main__":
